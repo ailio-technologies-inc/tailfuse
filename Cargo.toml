@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "crates/tailfuse-core",
+    "crates/tailfuse-cli",
+    "crates/licgen",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[profile.release]
+lto = true
+strip = true
