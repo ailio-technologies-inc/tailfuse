@@ -85,12 +85,14 @@ tunnels:
 
 ## Desktop app
 
-A Tauri menu-bar app (`app/`) wraps the same core: profile status, one-click
-login (opens the browser auth flow), tunnel management, license activation,
-and a system-tray quit that cleans up the PAC and the embedded nodes. It runs
-entirely as your user — no root helper, no kernel extension; the only system
-setting it touches is the PAC URL, which it refuses to overwrite if it isn't
-its own.
+A Tauri menu-bar app (`app/`) wraps the same core. On macOS it's a proper
+accessory app: no Dock icon, the window lives in the menu-bar tray, the close
+button hides instead of quitting, and the tray menu shows live per-tailnet
+state (● online / ○ logged out) with Start/Stop right there. One-click login
+opens the browser auth flow; a tray Quit (or window stop) cleans up the PAC
+and the embedded nodes. "Open at login" is built in. It runs entirely as your
+user — no root helper, no kernel extension; the only system setting it
+touches is the PAC URL, which it refuses to overwrite if it isn't its own.
 
 ```sh
 cd app && npm install && npm run tauri dev   # develop

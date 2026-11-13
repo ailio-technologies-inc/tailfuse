@@ -1,0 +1,45 @@
+name: Release
+
+# The Windows lane of tailfuse's release: macOS + Linux assets are built and
+# published by the cluster's dagu lane (infra/bake-host/dags/tailfuse-release.yaml,
+# docs/agents/tailfuse-release.md). Whichever lane runs first creates the
+# release; each uploads only its own assets.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: swatinem/rust-cache@v2
+      - run: cargo build --release -p tailfuse-cli --target x86_64-pc-windows-msvc
+      - name: Package
+        run: |
+          mkdir dist
+          copy target\x86_64-pc-windows-msvc\release\tailfuse.exe dist\tailfuse.exe
+          Compress-Archive -Path dist\tailfuse.exe -DestinationPath dist\tailfuse-v${{ github.ref_name }}-windows-x86_64.zip
+      - name: Create release if absent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" || `
+          gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "tailfuse ${{ github.ref_name }}" --generate-notes
+      - name: Upload Windows asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum dist/tailfuse-${{ github.ref_name }}-windows-x86_64.zip > dist/SHA256SUMS-windows.txt
+          gh release upload "${{ github.ref_name }}" --repo "${{ github.repository }}" --clobber dist/tailfuse-${{ github.ref_name }}-windows-x86_64.zip dist/SHA256SUMS-windows.txt
