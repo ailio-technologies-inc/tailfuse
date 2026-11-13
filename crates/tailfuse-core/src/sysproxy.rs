@@ -38,7 +38,9 @@ mod imp {
             .args(["-getautoproxyurl", &svc])
             .output()?;
         let text = String::from_utf8_lossy(&out.stdout);
-        if text.contains("/tailfuse.pac") || text.contains("Enabled: Yes") {
+        // Only touch the setting if the configured URL is ours — never
+        // disable someone else's proxy configuration.
+        if text.contains("/tailfuse.pac") {
             let _ = std::process::Command::new("networksetup")
                 .args(["-setautoproxystate", &svc, "off"])
                 .status();

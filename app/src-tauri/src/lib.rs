@@ -2,6 +2,10 @@
 //! tailfuse-core. Shows per-tailnet state, drives login, manages the router
 //! and system PAC, and keeps everything inside one user-process — no root
 //! helpers, no kernel extensions.
+//!
+//! Menu-bar behavior: on macOS the app is accessory-only (no Dock icon), the
+//! window hides at launch and on close, the tray menu shows live profile
+//! state, and Start/Stop works from the tray.
 
 use anyhow::Result;
 use serde::Serialize;
@@ -10,11 +14,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tailfuse_core::config::{self, Config, Profile, Tunnel};
 use tailfuse_core::{daemon, license, router, sysproxy};
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, State};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{watch, Mutex};
+
+const TRAY_ID: &str = "tailfuse-tray";
+const TRAY_REFRESH_MS: u64 = 3000;
 
 struct Running {
     daemons: daemon::DaemonSet,
@@ -93,8 +101,8 @@ async fn get_state(state: State<'_, AppState>) -> Result<StateView, String> {
     })
 }
 
-#[tauri::command]
-async fn start(state: State<'_, AppState>) -> Result<(), String> {
+/// Start profiles + router + PAC. Shared by the Start command and tray toggle.
+async fn start_inner(state: &AppState) -> Result<(), String> {
     let mut running = state.running.lock().await;
     if running.is_some() {
         return Ok(());
@@ -113,10 +121,9 @@ async fn start(state: State<'_, AppState>) -> Result<(), String> {
     let routes = router::RouteTable::build(&cfg, &socks_ports);
     let r = Arc::new(router::Router::new(&cfg, &cfg.router.listen, routes));
     let (shutdown, rx) = watch::channel(false);
-    let listen = cfg.router.listen.clone();
-    tokio::spawn(async move {
-        let _ = r.run(&listen, rx).await;
-    });
+    if let Err(e) = r.clone().serve(&cfg.router.listen, rx).await {
+        return Err(format!("router: {e:#}"));
+    }
     // Best-effort system PAC; the window shows the manual URL regardless.
     let pac_url = format!("http://{}/tailfuse.pac", cfg.router.listen);
     if let Err(e) = sysproxy::apply(&pac_url) {
@@ -126,15 +133,93 @@ async fn start(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn stop(state: State<'_, AppState>) -> Result<(), String> {
+/// Stop everything we started. Shared by the Stop command and tray toggle.
+async fn stop_inner(state: &AppState) {
     let mut running = state.running.lock().await;
     if let Some(r) = running.take() {
         let _ = r.shutdown.send(true);
         r.daemons.stop().await;
         let _ = sysproxy::clear();
     }
+}
+
+#[tauri::command]
+async fn start(state: State<'_, AppState>) -> Result<(), String> {
+    start_inner(&state).await
+}
+
+#[tauri::command]
+async fn stop(state: State<'_, AppState>) -> Result<(), String> {
+    stop_inner(&state).await;
     Ok(())
+}
+
+/// Rebuild the tray menu from the given state snapshot.
+fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::ProfileStatus]) {
+    let Ok(cfg) = config::load(&state.cfg_path) else {
+        return;
+    };
+    let is_up = state
+        .running
+        .try_lock()
+        .map(|g| g.is_some())
+        .unwrap_or(true);
+    let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
+    for name in cfg.profiles.keys() {
+        let online = stats.iter().any(|s| s.name == *name && s.online);
+        if let Ok(item) = CheckMenuItem::with_id(
+            app,
+            format!("profile-{name}"),
+            format!("{} {name}", if online { "●" } else { "○" }),
+            false,
+            online,
+            None::<&str>,
+        ) {
+            items.push(Box::new(item));
+        }
+    }
+    if !cfg.profiles.is_empty() {
+        if let Ok(sep) = PredefinedMenuItem::separator(app) {
+            items.push(Box::new(sep));
+        }
+    }
+    if let Ok(show) = MenuItem::with_id(app, "show", "Show tailfuse", true, None::<&str>) {
+        items.push(Box::new(show));
+    }
+    let toggle_label = if is_up { "Stop" } else { "Start" };
+    if let Ok(toggle) = MenuItem::with_id(app, "toggle", toggle_label, true, None::<&str>) {
+        items.push(Box::new(toggle));
+    }
+    if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit tailfuse", true, None::<&str>) {
+        items.push(Box::new(quit));
+    }
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        items.iter().map(|b| b.as_ref()).collect();
+    let Ok(menu) = Menu::with_items(app, &refs) else {
+        return;
+    };
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        if let Err(e) = tray.set_menu(Some(menu)) {
+            tracing::warn!("tray menu update: {e}");
+        }
+    }
+}
+
+/// Snapshot state and refresh the tray menu. Never fatal — the tray is
+/// decorative.
+fn refresh_tray(app: &AppHandle) {
+    let Some(state) = app.try_state::<SharedState>() else {
+        return;
+    };
+    let state = Arc::clone(&state);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let stats = match state.running.lock().await.as_ref() {
+            Some(r) => r.daemons.status().await,
+            None => vec![],
+        };
+        rebuild_tray_menu(&app, &state, &stats);
+    });
 }
 
 #[tauri::command]
@@ -144,18 +229,15 @@ async fn login(
     app: AppHandle,
 ) -> Result<Option<String>, String> {
     let cfg = state.cfg.lock().await.clone();
-    {
-        let running = state.running.lock().await;
-        if running.is_none() {
-            return Err("start tailfuse first".into());
-        }
+    if state.running.lock().await.is_none() {
+        return Err("start tailfuse first".into());
     }
     let url = daemon::login_start(&cfg, &name)
         .await
         .map_err(|e| e.to_string())?;
     if let Some(u) = &url {
         let _ = app.opener().open_url(u, None::<&str>);
-        // Wait for completion in the background; the frontend polls state.
+        let name = name.clone();
         tokio::spawn(async move {
             if let Err(e) = daemon::login_wait(&name).await {
                 tracing::warn!(profile = %name, "login: {e:#}");
@@ -252,42 +334,83 @@ async fn test_host(state: State<'_, AppState>, host: String) -> Result<String, S
     })
 }
 
+#[tauri::command]
+async fn get_autostart(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let auto = app.autolaunch();
+    if enabled {
+        auto.enable().map_err(|e| e.to_string())
+    } else {
+        auto.disable().map_err(|e| e.to_string())
+    }
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
 fn build_tray(app: &AppHandle) -> Result<()> {
     let show = MenuItem::with_id(app, "show", "Show tailfuse", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit tailfuse", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
-    let icon = app.default_window_icon().cloned();
-    let mut builder = TrayIconBuilder::new()
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .tooltip("tailfuse")
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
-                // Stop everything we started, then exit.
                 if let Some(state) = app.try_state::<SharedState>() {
-                    let state: Arc<AppState> = Arc::clone(&state);
+                    let state = Arc::clone(&state);
                     let app = AppHandle::clone(app);
                     tauri::async_runtime::spawn(async move {
-                        let mut running = state.running.lock().await;
-                        if let Some(r) = running.take() {
-                            let _ = r.shutdown.send(true);
-                            r.daemons.stop().await;
-                            let _ = sysproxy::clear();
-                        }
+                        stop_inner(&state).await;
                         app.exit(0);
                     });
                 } else {
                     app.exit(0);
                 }
             }
-            "show" => {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
+            "show" => show_main_window(app),
+            "toggle" => {
+                if let Some(state) = app.try_state::<SharedState>() {
+                    let state = Arc::clone(&state);
+                    let app = AppHandle::clone(app);
+                    tauri::async_runtime::spawn(async move {
+                        let is_up = state.running.lock().await.is_some();
+                        let res = if is_up {
+                            stop_inner(&state).await;
+                            Ok(())
+                        } else {
+                            start_inner(&state).await
+                        };
+                        if let Err(e) = res {
+                            tracing::warn!("tray toggle: {e}");
+                        }
+                        refresh_tray(&app);
+                    });
                 }
             }
+            id if id.starts_with("profile-") => show_main_window(app),
             _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
         });
-    if let Some(icon) = icon {
+    if let Some(icon) = app.default_window_icon().cloned() {
         builder = builder.icon(icon);
     }
     let _tray = builder.build(app)?;
@@ -301,13 +424,44 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(Arc::new(AppState {
             cfg_path,
             cfg: Mutex::new(cfg),
             running: Mutex::new(None),
         }))
         .setup(|app| {
+            // Menu-bar behavior on macOS: no Dock icon, window hidden at
+            // launch — the tray is the app. Other platforms keep a window.
+            #[cfg(target_os = "macos")]
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+            // Close hides to the tray instead of killing the daemons.
+            if let Some(w) = app.get_webview_window("main") {
+                let win = w.clone();
+                w.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win.hide();
+                    }
+                });
+            }
             build_tray(app.handle())?;
+            // Keep the tray menu's profile states fresh.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(TRAY_REFRESH_MS)).await;
+                    refresh_tray(&handle);
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -321,6 +475,8 @@ pub fn run() {
             remove_tunnel,
             activate_license,
             test_host,
+            get_autostart,
+            set_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tailfuse");

@@ -9,23 +9,40 @@
   <body>
     <header>
       <div class="brand">
-        <h1>tailfuse</h1>
-        <span id="license" class="license"></span>
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <circle cx="6" cy="12" r="2.6" />
+            <circle cx="18" cy="6" r="2.6" />
+            <circle cx="18" cy="18" r="2.6" />
+            <path d="M8.3 10.8 15.7 7.2M8.3 13.2 15.7 16.8" />
+          </svg>
+        </div>
+        <div>
+          <h1>tailfuse</h1>
+          <span id="license" class="license"></span>
+        </div>
       </div>
-      <button id="power" class="power">Start</button>
+      <div class="header-actions">
+        <label class="switch" title="Start or stop tailfuse">
+          <input type="checkbox" id="power" />
+          <span class="slider"></span>
+        </label>
+        <span id="power-label" class="power-label">Stopped</span>
+      </div>
     </header>
 
     <main>
       <section>
         <div class="section-head">
-          <h2>Profiles</h2>
+          <h2>Tailnets</h2>
           <form id="add-profile" class="inline-form">
             <input id="p-name" placeholder="name" required />
             <input id="p-suffix" placeholder=".work.ts.net" required />
-            <button type="submit">Add</button>
+            <button type="submit">Add profile</button>
           </form>
         </div>
         <ul id="profiles" class="cards"></ul>
+        <p class="hint" id="profile-hint"></p>
       </section>
 
       <section>
@@ -36,7 +53,7 @@
             <input id="t-listen" placeholder="127.0.0.1:5432" required />
             <input id="t-target" placeholder="db.work.ts.net:5432" required />
             <input id="t-profile" placeholder="profile" required />
-            <button type="submit">Add</button>
+            <button type="submit">Add tunnel</button>
           </form>
         </div>
         <ul id="tunnels" class="cards"></ul>
@@ -46,22 +63,27 @@
         <div>
           <h2>Browser routing</h2>
           <p>
-            PAC URL: <code id="pac-url"></code> — the app sets the system PAC on
-            start (macOS/Windows) and clears its own setting on quit.
+            PAC URL: <code id="pac-url"></code><br />
+            The app sets the system PAC on start (macOS/Windows) and clears its
+            own setting on quit. Unowned hostnames are always refused.
           </p>
           <form id="test-host" class="inline-form">
             <input id="test-input" placeholder="nas.home-lab.ts.net" />
-            <button type="submit">Test</button>
+            <button type="submit">Test routing</button>
             <span id="test-result"></span>
           </form>
         </div>
         <div>
-          <h2>License</h2>
+          <h2>License &amp; startup</h2>
           <form id="activate" class="inline-form">
-            <input id="license-key" placeholder="tailfuse_…" />
+            <input id="license-key" placeholder="tailfuse_…" class="wide" />
             <button type="submit">Activate</button>
           </form>
-          <p id="license-msg"></p>
+          <p id="license-msg" class="hint"></p>
+          <label class="check">
+            <input type="checkbox" id="autostart" />
+            <span>Open tailfuse at login</span>
+          </label>
         </div>
       </section>
     </main>

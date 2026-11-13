@@ -13,26 +13,39 @@ async function refresh() {
 
   $("#license").textContent = s.license;
   $("#pac-url").textContent = s.pac_url;
-  $("#power").textContent = s.up ? "Stop" : "Start";
-  $("#power").classList.toggle("on", s.up);
+  $("#power").checked = s.up;
+  $("#power-label").textContent = s.up ? "Running" : "Stopped";
+  $("#power-label").classList.toggle("on", s.up);
+
+  const freeUsed = Math.min(s.profiles.length, 2);
+  $("#profile-hint").textContent =
+    s.profiles.length <= 2
+      ? `${freeUsed}/2 free profiles`
+      : `${s.profiles.length} profiles (licensed)`;
 
   const ul = $("#profiles");
   ul.innerHTML = "";
   for (const p of s.profiles) {
     const li = document.createElement("li");
     li.className = "card";
-    const state = p.error ? `error: ${p.error}` : p.online ? "online" : "logged out";
+    const state = p.error
+      ? `error: ${p.error}`
+      : p.online
+        ? "online"
+        : s.up
+          ? "logged out"
+          : "stopped";
     li.innerHTML = `
       <span class="dot ${p.online ? "on" : ""}"></span>
       <div class="card-body">
         <strong>${escapeHtml(p.name)}</strong>
-        <span class="muted">${p.suffixes.map(escapeHtml).join(", ")}</span>
-        <span class="muted">${escapeHtml(p.hostname)} ${p.ips.join(", ")}</span>
-        <span class="state">${escapeHtml(state)}</span>
+        <span class="mono muted">${p.suffixes.map(escapeHtml).join("  ")}</span>
+        <span class="muted">${escapeHtml([p.hostname, ...p.ips].filter(Boolean).join(" · "))}</span>
       </div>
       <div class="card-actions">
-        ${p.online ? "" : `<button data-login="${escapeHtml(p.name)}">Log in</button>`}
-        <button class="danger" data-remove-profile="${escapeHtml(p.name)}">Remove</button>
+        <span class="pill ${p.online ? "pill-on" : ""}">${escapeHtml(state)}</span>
+        ${!p.online && s.up ? `<button data-login="${escapeHtml(p.name)}">Log in</button>` : ""}
+        <button class="icon danger" title="Remove profile" data-remove-profile="${escapeHtml(p.name)}">✕</button>
       </div>`;
     ul.appendChild(li);
   }
@@ -46,11 +59,11 @@ async function refresh() {
       <span class="dot tunnel"></span>
       <div class="card-body">
         <strong>${escapeHtml(t.name)}</strong>
-        <span class="muted">${escapeHtml(t.listen)} → ${escapeHtml(t.target)}</span>
+        <span class="mono muted">${escapeHtml(t.listen)} → ${escapeHtml(t.target)}</span>
         <span class="muted">via ${escapeHtml(t.profile)}</span>
       </div>
       <div class="card-actions">
-        <button class="danger" data-remove-tunnel="${escapeHtml(t.name)}">Remove</button>
+        <button class="icon danger" title="Remove tunnel" data-remove-tunnel="${escapeHtml(t.name)}">✕</button>
       </div>`;
     tl.appendChild(li);
   }
@@ -62,9 +75,14 @@ function escapeHtml(s) {
   }[c]));
 }
 
-$("#power").addEventListener("click", async () => {
-  const on = $("#power").classList.contains("on");
-  await invoke(on ? "stop" : "start");
+$("#power").addEventListener("change", async (e) => {
+  e.target.disabled = true;
+  try {
+    await invoke(e.target.checked ? "start" : "stop");
+  } catch (err) {
+    alert(String(err));
+  }
+  e.target.disabled = false;
   refresh();
 });
 
@@ -126,6 +144,19 @@ $("#test-host").addEventListener("submit", async (e) => {
     host: $("#test-input").value.trim(),
   });
 });
+
+$("#autostart").addEventListener("change", async (e) => {
+  try {
+    await invoke("set_autostart", { enabled: e.target.checked });
+  } catch (err) {
+    alert(String(err));
+    e.target.checked = !e.target.checked;
+  }
+});
+
+invoke("get_autostart")
+  .then((v) => ($("#autostart").checked = v))
+  .catch(() => {});
 
 refresh();
 setInterval(refresh, 3000);

@@ -6,11 +6,21 @@
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
+
+/// Search PATH for a binary, splitting on the platform separator.
+fn which_in_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join(name))
+            .find(|cand| cand.exists())
+    })
+}
 
 use crate::config;
 
@@ -46,13 +56,8 @@ pub fn find_tailscaled() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TAILSCALED_PATH") {
         return Some(PathBuf::from(p));
     }
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in path.split(':') {
-            let cand = Path::new(dir).join("tailscaled");
-            if cand.exists() {
-                return Some(cand);
-            }
-        }
+    if let Some(cand) = which_in_path("tailscaled") {
+        return Some(cand);
     }
     for cand in [
         "/opt/homebrew/bin/tailscaled",
@@ -73,13 +78,8 @@ pub fn find_tailscale() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TAILSCALE_PATH") {
         return Some(PathBuf::from(p));
     }
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in path.split(':') {
-            let cand = Path::new(dir).join("tailscale");
-            if cand.exists() {
-                return Some(cand);
-            }
-        }
+    if let Some(cand) = which_in_path("tailscale") {
+        return Some(cand);
     }
     for cand in [
         "/opt/homebrew/bin/tailscale",
@@ -223,13 +223,6 @@ impl DaemonSet {
     }
 }
 
-impl Drop for DaemonSet {
-    fn drop(&mut self) {
-        // Children have kill_on_drop; blocking here is not possible in Drop,
-        // so best-effort is handled by kill_on_drop plus explicit stop().
-    }
-}
-
 /// Run `tailscale --socket <sock> <args>`, returning stdout on success.
 pub async fn tailscale_cli(socket: &Path, args: &[&str]) -> Result<String> {
     let bin = find_tailscale().context("tailscale CLI not found")?;
@@ -343,5 +336,3 @@ async fn apply_profile_prefs(name: &str, prof: &config::Profile, socket: &Path) 
     }
     Ok(())
 }
-
-use std::ffi::OsStr;

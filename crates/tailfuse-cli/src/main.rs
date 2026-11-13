@@ -226,11 +226,11 @@ async fn cmd_up(no_pac: bool) -> Result<()> {
         (*routes).clone(),
     ));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let router_task = tokio::spawn({
-        let listen = cfg.router.listen.clone();
-        let router = router.clone();
-        async move { router.run(&listen, shutdown_rx).await }
-    });
+    let router_addr = router
+        .clone()
+        .serve(&cfg.router.listen, shutdown_rx)
+        .await?;
+    println!("router listening on {router_addr} (PAC: http://{router_addr}/tailfuse.pac)");
 
     // Tunnels.
     let (tun_tx, tun_rx) = watch::channel(false);
@@ -270,7 +270,6 @@ async fn cmd_up(no_pac: bool) -> Result<()> {
             eprintln!("warning: clearing PAC: {e:#}");
         }
     }
-    router_task.abort();
     for h in tunnel_handles {
         h.task.abort();
     }
@@ -350,11 +349,7 @@ async fn cmd_run(command: Vec<String>) -> Result<()> {
     let routes = router::RouteTable::build(&cfg, &socks_ports);
     let router = Arc::new(router::Router::new(&cfg, &cfg.router.listen, routes));
     let (_tx, rx) = watch::channel(false);
-    let router_task = tokio::spawn({
-        let listen = cfg.router.listen.clone();
-        async move { router.run(&listen, rx).await }
-    });
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await; // let it bind
+    router.clone().serve(&cfg.router.listen, rx).await?;
     let addr = cfg.router.listen.clone();
 
     let mut child = tokio::process::Command::new(cmd)
@@ -372,7 +367,6 @@ async fn cmd_run(command: Vec<String>) -> Result<()> {
         .stderr(std::process::Stdio::inherit())
         .spawn()?;
     let status = child.wait().await?;
-    router_task.abort();
     set.stop().await;
     std::process::exit(status.code().unwrap_or(1));
 }
@@ -410,9 +404,11 @@ async fn cmd_serve_pac() -> Result<()> {
     let routes = router::RouteTable::build(&cfg, &BTreeMap::new());
     let router = Arc::new(router::Router::new(&cfg, &cfg.router.listen, routes));
     let (_tx, rx) = watch::channel(false);
-    println!("PAC URL: http://{}/tailfuse.pac", cfg.router.listen);
+    let addr = router.clone().serve(&cfg.router.listen, rx).await?;
+    println!("PAC URL: http://{addr}/tailfuse.pac");
     println!("Press Ctrl-C to stop.");
-    router.run(&cfg.router.listen.clone(), rx).await
+    wait_for_ctrl_c().await;
+    Ok(())
 }
 
 async fn cmd_dial_profile(profile: &str, host: &str, port: u16) -> Result<()> {

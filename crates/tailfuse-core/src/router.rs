@@ -72,32 +72,39 @@ impl Router {
         self.routes.clone()
     }
 
-    /// Serve until `shutdown` fires.
-    pub async fn run(
+    /// Bind and serve in the background until `shutdown` fires.
+    /// Returns the bound address (useful when `listen` specifies port 0).
+    pub async fn serve(
         self: Arc<Self>,
         listen: &str,
         mut shutdown: watch::Receiver<bool>,
-    ) -> Result<()> {
+    ) -> Result<std::net::SocketAddr> {
         let listener = TcpListener::bind(listen)
             .await
             .with_context(|| format!("router bind {listen}"))?;
         let addr = listener.local_addr()?;
         tracing::info!(%addr, "router listening");
-        println!("router listening on {addr} (PAC: http://{addr}/tailfuse.pac)");
-        loop {
-            tokio::select! {
-                _ = shutdown.changed() => return Ok(()),
-                accept = listener.accept() => {
-                    let Ok((conn, _)) = accept else { continue };
-                    let this = self.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = this.handle(conn).await {
-                            tracing::debug!(error = %e, "connection closed");
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            return;
                         }
-                    });
+                    }
+                    accept = listener.accept() => {
+                        let Ok((conn, _)) = accept else { continue };
+                        let this = self.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = this.handle(conn).await {
+                                tracing::debug!(error = %e, "connection closed");
+                            }
+                        });
+                    }
                 }
             }
-        }
+        });
+        Ok(addr)
     }
 
     async fn handle(self: Arc<Self>, mut conn: TcpStream) -> Result<()> {
@@ -296,4 +303,154 @@ async fn pipe_bidirectional(a: &mut TcpStream, b: &mut TcpStream) -> Result<()> 
         r = b_to_a => { r?; }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::sync::mpsc;
+
+    /// A fake per-profile SOCKS5 upstream: completes the handshake, records
+    /// the requested destination, then sends a marker byte proving which
+    /// upstream the client landed on.
+    async fn fake_upstream(marker: u8, seen: mpsc::Sender<String>) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = listener.accept().await else {
+                    return;
+                };
+                let seen = seen.clone();
+                tokio::spawn(async move {
+                    // Greeting.
+                    let mut h = [0u8; 2];
+                    if s.read_exact(&mut h).await.is_err() {
+                        return;
+                    }
+                    let mut m = vec![0u8; h[1] as usize];
+                    let _ = s.read_exact(&mut m).await;
+                    let _ = s.write_all(&[0x05, 0x00]).await;
+                    // Request.
+                    let mut r = [0u8; 4];
+                    if s.read_exact(&mut r).await.is_err() {
+                        return;
+                    }
+                    let len = s.read_u8().await.unwrap_or(0);
+                    let mut host = vec![0u8; len as usize];
+                    let _ = s.read_exact(&mut host).await;
+                    let mut pb = [0u8; 2];
+                    let _ = s.read_exact(&mut pb).await;
+                    let _ = seen
+                        .send(format!(
+                            "{}:{}",
+                            String::from_utf8_lossy(&host),
+                            u16::from_be_bytes(pb)
+                        ))
+                        .await;
+                    let _ = s
+                        .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                        .await;
+                    let _ = s.write_u8(marker).await;
+                    let _ = s.flush().await;
+                });
+            }
+        });
+        port
+    }
+
+    async fn test_router() -> (std::net::SocketAddr, watch::Sender<bool>) {
+        let mut cfg = crate::config::Config::default();
+        cfg.profiles.insert(
+            "work".into(),
+            crate::config::Profile {
+                suffixes: vec![".work.ts.net".into()],
+                ..Default::default()
+            },
+        );
+        cfg.profiles.insert(
+            "personal".into(),
+            crate::config::Profile {
+                suffixes: vec![".home-lab.ts.net".into()],
+                ..Default::default()
+            },
+        );
+        let (_tx_work, rx_work) = mpsc::channel(8);
+        let (_tx_pers, rx_pers) = mpsc::channel(8);
+        let work_port = fake_upstream(b'W', _tx_work).await;
+        let pers_port = fake_upstream(b'P', _tx_pers).await;
+        let _ = rx_work;
+        let _ = rx_pers;
+        let routes = RouteTable {
+            by_suffix: BTreeMap::from([
+                (".work.ts.net".into(), ("work".into(), work_port)),
+                (".home-lab.ts.net".into(), ("personal".into(), pers_port)),
+            ]),
+        };
+        let router = Arc::new(Router::new(&cfg, "127.0.0.1:0", routes));
+        let (tx, rx) = watch::channel(false);
+        let addr = router.serve("127.0.0.1:0", rx).await.unwrap();
+        (addr, tx)
+    }
+
+    #[tokio::test]
+    async fn socks5_routes_by_suffix() {
+        let (addr, _tx) = test_router().await;
+        let mut s = socks5_connect_pub(addr.port(), "db.work.ts.net", 5432)
+            .await
+            .unwrap();
+        assert_eq!(s.read_u8().await.unwrap(), b'W');
+
+        let mut s2 = socks5_connect_pub(addr.port(), "nas.home-lab.ts.net", 80)
+            .await
+            .unwrap();
+        assert_eq!(s2.read_u8().await.unwrap(), b'P');
+    }
+
+    #[tokio::test]
+    async fn socks5_refuses_unowned() {
+        let (addr, _tx) = test_router().await;
+        // Our client errors on the failure reply; assert it does not connect.
+        assert!(socks5_connect_pub(addr.port(), "evil.example.com", 443)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn http_connect_routes_and_refuses() {
+        let (addr, _tx) = test_router().await;
+        let mut s = TcpStream::connect(addr).await.unwrap();
+        s.write_all(b"CONNECT wiki.work.ts.net:443 HTTP/1.1\r\nHost: wiki.work.ts.net:443\r\n\r\n")
+            .await
+            .unwrap();
+        let mut buf = [0u8; 39];
+        s.read_exact(&mut buf).await.unwrap();
+        assert!(String::from_utf8_lossy(&buf).starts_with("HTTP/1.1 200"));
+        assert_eq!(s.read_u8().await.unwrap(), b'W');
+
+        let mut s2 = TcpStream::connect(addr).await.unwrap();
+        s2.write_all(b"CONNECT evil.example.com:443 HTTP/1.1\r\n\r\n")
+            .await
+            .unwrap();
+        let mut buf2 = vec![0u8; 128];
+        let n = s2.read(&mut buf2).await.unwrap();
+        let text = String::from_utf8_lossy(&buf2[..n]).to_string();
+        assert!(text.starts_with("HTTP/1.1 403"), "got: {text}");
+        assert!(text.contains("no tailfuse profile owns"));
+    }
+
+    #[tokio::test]
+    async fn pac_endpoint_served() {
+        let (addr, _tx) = test_router().await;
+        let mut s = TcpStream::connect(addr).await.unwrap();
+        s.write_all(b"GET /tailfuse.pac HTTP/1.1\r\nHost: x\r\n\r\n")
+            .await
+            .unwrap();
+        let mut buf = vec![0u8; 4096];
+        let n = s.read(&mut buf).await.unwrap();
+        let text = String::from_utf8_lossy(&buf[..n]).to_string();
+        assert!(text.contains("200 OK"));
+        assert!(text.contains("work.ts.net"));
+    }
 }

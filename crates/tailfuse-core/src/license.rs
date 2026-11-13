@@ -55,6 +55,41 @@ fn today() -> (i32, u32, u32) {
     civil_from_days(days)
 }
 
+/// Sign a license payload, returning a key string (tests; licgen has its own
+/// vendored copy since the private key must never ship in the core crate).
+#[cfg(test)]
+pub fn sign(payload_json: &[u8], private_key_b64: &str) -> Result<String> {
+    use ed25519_dalek::Signer;
+    let sk_bytes = URL_SAFE_NO_PAD
+        .decode(private_key_b64)
+        .context("decoding private key")?;
+    let sk = ed25519_dalek::SigningKey::from_bytes(
+        &sk_bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("bad private key length"))?,
+    );
+    let sig = sk.sign(payload_json);
+    Ok(format!(
+        "tailfuse_{}__{}",
+        URL_SAFE_NO_PAD.encode(payload_json),
+        URL_SAFE_NO_PAD.encode(sig.to_bytes())
+    ))
+}
+
+/// Generate a keypair as (private_b64, public_b64), unique per call.
+#[cfg(test)]
+pub fn generate_keypair() -> (String, String) {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    static SEED: AtomicU8 = AtomicU8::new(1);
+    let mut seed = [0u8; 32];
+    seed[0] = SEED.fetch_add(1, Ordering::Relaxed);
+    let sk = ed25519_dalek::SigningKey::from_bytes(&seed);
+    (
+        URL_SAFE_NO_PAD.encode(sk.to_bytes()),
+        URL_SAFE_NO_PAD.encode(sk.verifying_key().to_bytes()),
+    )
+}
+
 // Howard Hinnant's civil_from_days, no chrono dependency in the core crate.
 fn civil_from_days(z: i64) -> (i32, u32, u32) {
     let z = z + 719468;
@@ -69,11 +104,17 @@ fn civil_from_days(z: i64) -> (i32, u32, u32) {
     (if m <= 2 { y + 1 } else { y } as i32, m as u32, d as u32)
 }
 
-/// Parse and verify a key of the form `tailfuse_<payload_b64>__<sig_b64>`.
+/// Parse and verify a key of the form `tailfuse_<payload_b64>__<sig_b64>`
+/// against the embedded vendor key.
 pub fn verify(key: &str) -> Result<License> {
     if PUBKEY == "PUBKEY_PLACEHOLDER" {
         bail!("this build has no vendor public key; licenses are not yet issuable");
     }
+    verify_with(key, PUBKEY)
+}
+
+/// Verify against an explicit public key (tests, tooling).
+pub fn verify_with(key: &str, pubkey: &str) -> Result<License> {
     let body = key
         .trim()
         .strip_prefix("tailfuse_")
@@ -85,9 +126,7 @@ pub fn verify(key: &str) -> Result<License> {
     let sig_bytes = URL_SAFE_NO_PAD
         .decode(sig_b64)
         .context("invalid license signature")?;
-    let vk_bytes = URL_SAFE_NO_PAD
-        .decode(PUBKEY)
-        .context("bad vendor key in build")?;
+    let vk_bytes = URL_SAFE_NO_PAD.decode(pubkey).context("bad vendor key")?;
     let vk = VerifyingKey::from_bytes(
         &vk_bytes
             .try_into()
@@ -101,13 +140,18 @@ pub fn verify(key: &str) -> Result<License> {
 
 /// Nil if `n_profiles` is permitted, else a human-readable error.
 pub fn check(n_profiles: usize, key: &str) -> Result<()> {
+    check_with(n_profiles, key, PUBKEY)
+}
+
+/// Like [`check`] against an explicit vendor key (tests, tooling).
+pub fn check_with(n_profiles: usize, key: &str, pubkey: &str) -> Result<()> {
     if n_profiles <= FREE_PROFILES {
         return Ok(());
     }
     if key.trim().is_empty() {
         bail!("{n_profiles} profiles requires a license (free tier: {FREE_PROFILES}) — activate one with `tailfuse license activate <key>`");
     }
-    let lic = verify(key).context("license invalid")?;
+    let lic = verify_with(key, pubkey).context("license invalid")?;
     if lic.max_profiles > 0 && n_profiles > lic.max_profiles {
         bail!(
             "license allows {} profiles, config has {n_profiles} — upgrade your license",
@@ -143,4 +187,72 @@ pub fn status(n_profiles: usize, key: &str) -> String {
         }
     }
     format!("free ({n_profiles}/{FREE_PROFILES} profiles)")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_key(max_profiles: usize, email: &str) -> (String, String, String) {
+        let (priv_b64, pub_b64) = generate_keypair();
+        let payload = serde_json::to_vec(&License {
+            email: email.to_string(),
+            max_profiles,
+            updates_until: "2099-01-01".into(),
+            issued_at: "2026-01-01T00:00:00Z".into(),
+            key_id: "test".into(),
+        })
+        .unwrap();
+        let key = sign(&payload, &priv_b64).unwrap();
+        (key, priv_b64, pub_b64)
+    }
+
+    #[test]
+    fn roundtrip_verify() {
+        let (key, _, pub_b64) = make_key(10, "user@example.com");
+        let lic = verify_with(&key, &pub_b64).unwrap();
+        assert_eq!(lic.email, "user@example.com");
+        assert_eq!(lic.max_profiles, 10);
+    }
+
+    #[test]
+    fn rejects_tampered_payload() {
+        let (key, _, pub_b64) = make_key(10, "user@example.com");
+        // Flip one character inside the base64 payload: decodes fine, but
+        // the signature no longer matches.
+        let mut chars: Vec<char> = key.chars().collect();
+        chars[12] = if chars[12] == 'A' { 'B' } else { 'A' };
+        let swapped: String = chars.into_iter().collect();
+        assert!(verify_with(&swapped, &pub_b64).is_err());
+    }
+
+    #[test]
+    fn rejects_wrong_key() {
+        let (key, _, _) = make_key(10, "user@example.com");
+        let (_, other_pub) = generate_keypair();
+        assert!(verify_with(&key, &other_pub).is_err());
+    }
+
+    #[test]
+    fn check_free_tier_and_limit() {
+        assert!(check_with(2, "", "x").is_ok());
+        assert!(check_with(3, "", "x").is_err());
+        let (key, _, pub_b64) = make_key(5, "user@example.com");
+        assert!(check_with(3, &key, &pub_b64).is_ok());
+        assert!(check_with(6, &key, &pub_b64).is_err());
+    }
+
+    #[test]
+    fn updates_expiry_is_warning_only() {
+        let mut lic = License {
+            email: "a@b.c".into(),
+            max_profiles: 0,
+            updates_until: "2020-01-01".into(),
+            issued_at: String::new(),
+            key_id: String::new(),
+        };
+        assert!(lic.updates_expired());
+        lic.updates_until = "2099-01-01".into();
+        assert!(!lic.updates_expired());
+    }
 }
