@@ -397,9 +397,9 @@ fn build_tray(app: &AppHandle) -> Result<()> {
     let show = MenuItem::with_id(app, "show", "Show tailfuse", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit tailfuse", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
-    // The menu-bar glyph: white-on-transparent template, tinted by macOS.
+    // The menu-bar glyph: full-colour ochre nodes, readable on light and dark bars.
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-36.png"))?;
-    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
+    let builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .tooltip("tailfuse")
         .icon(icon)
@@ -491,10 +491,6 @@ fn build_tray(app: &AppHandle) -> Result<()> {
                 show_main_window(tray.app_handle());
             }
         });
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.icon_as_template(true);
-    }
     let _tray = builder.build(app)?;
     Ok(())
 }

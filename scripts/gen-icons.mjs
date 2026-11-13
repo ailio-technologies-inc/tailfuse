@@ -136,10 +136,11 @@ function disk(c, cx, cy, r, color, alpha = 1) {
 }
 
 // ---------------------------------------------------------------- tray icon
-// template glyph: white on transparent, macOS tints it for the menu bar
+// Full-colour glyph (ochre on transparent), like Tailscale's own menu-bar
+// icon: readable on both light and dark menu bars without template tinting.
 for (const S of [18, 36]) {
   const c = canvas(S);
-  drawGlyph(c, [255, 255, 255], [S * 0.10, S * 0.10, S * 0.80, S * 0.80], S <= 18 ? 1.6 : 1.35);
+  drawGlyph(c, OCHRE, [S * 0.10, S * 0.10, S * 0.80, S * 0.80], S <= 18 ? 1.6 : 1.35);
   writeFileSync(`${OUT}tray-${S}.png`, png(S, S, c.px));
-  console.log(`tray-${S}.png (menu-bar template)`);
+  console.log(`tray-${S}.png (menu-bar, full colour)`);
 }
