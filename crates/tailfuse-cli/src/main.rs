@@ -99,6 +99,10 @@ enum ProfileAction {
     Remove { name: String },
     /// Authenticate a profile with its tailnet (opens a browser).
     Login { name: String },
+    /// Import the tailnet this machine's official Tailscale app is logged into
+    /// as a new profile, and authenticate it (browser OAuth with a localhost
+    /// callback — the node is ready when the command returns).
+    Import { name: String },
 }
 
 #[derive(Subcommand)]
@@ -510,12 +514,78 @@ async fn cmd_profile(action: ProfileAction) -> Result<()> {
             );
         }
         ProfileAction::Login { name } => match daemon::login(&cfg, &name).await? {
-            Some(url) => println!(
-                "open this URL to authenticate profile {name:?}:\n\n  {url}\n\nauthenticated."
-            ),
+            Some(url) => {
+                open_browser(&url);
+                println!(
+                    "open this URL to authenticate profile {name:?}:\n\n  {url}\n\nauthenticated."
+                )
+            }
             None => println!("profile {name:?} authenticated via auth key"),
         },
+        ProfileAction::Import { name } => cmd_profile_import(&mut cfg, &path, &name).await?,
     }
+    Ok(())
+}
+
+/// Open a URL in the user's browser (best effort, every platform).
+fn open_browser(url: &str) {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(url).status();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", url])
+        .status();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let _ = std::process::Command::new("xdg-open").arg(url).status();
+}
+
+/// `tailfuse profile import <name>`: read the tailnet the official Tailscale
+/// app is logged into, create a profile owning its MagicDNS suffix, then
+/// authenticate a fresh node in that tailnet through the browser OAuth flow
+/// (the daemon catches the localhost callback itself; this returns once the
+/// control plane answers).
+async fn cmd_profile_import(cfg: &mut Config, path: &std::path::Path, name: &str) -> Result<()> {
+    if cfg.profiles.contains_key(name) {
+        bail!("profile {name:?} already exists");
+    }
+    let suffix = daemon::detect_official_tailnet_suffix()
+        .await
+        .context("could not read the official Tailscale client's tailnet — is Tailscale installed, running and logged in?")?;
+    let suffix = format!(".{suffix}");
+    cfg.profiles.insert(
+        name.to_string(),
+        Profile {
+            suffixes: vec![suffix.clone()],
+            ..Default::default()
+        },
+    );
+    cfg.validate()?;
+    license::check(cfg.profiles.len(), &cfg.license)?;
+    cfg.save(path)?;
+    println!(
+        "created profile {name:?} owning {suffix} — authenticating a new node in that tailnet"
+    );
+
+    // Spin up just this profile's daemon and run the browser login; the
+    // official client's tailnet is unaffected (userspace node, own state).
+    let mut single = cfg.clone();
+    single.profiles = BTreeMap::from([(name.to_string(), cfg.profiles[name].clone())]);
+    let set = daemon::DaemonSet::start(&single).await?;
+    let url = daemon::login_start(cfg, name).await;
+    match url {
+        Ok(Some(url)) => {
+            open_browser(&url);
+            println!("finish sign-in in the browser: {url}");
+            daemon::login_wait(name).await?;
+        }
+        Ok(None) => (),
+        Err(e) => {
+            set.stop().await;
+            return Err(e);
+        }
+    }
+    set.stop().await;
+    println!("profile {name:?} imported and authenticated — `tailfuse up` connects it");
     Ok(())
 }
 

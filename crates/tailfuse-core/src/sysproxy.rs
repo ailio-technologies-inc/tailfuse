@@ -1,11 +1,12 @@
 //! System PAC configuration. Only touches settings tailfuse owns: refuses to
 //! overwrite an existing PAC URL that isn't ours, and clears only its own.
 
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
+    use anyhow::{bail, Context};
 
     pub fn apply(pac_url: &str) -> Result<()> {
         let svc = primary_service()?;
@@ -94,6 +95,7 @@ mod imp {
 #[cfg(target_os = "windows")]
 mod imp {
     use super::*;
+    use anyhow::bail;
 
     const REG_PATH: &str = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
 
@@ -140,6 +142,7 @@ mod imp {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 mod imp {
     use super::*;
+    use anyhow::bail;
     pub fn apply(_pac_url: &str) -> Result<()> {
         bail!("system PAC configuration not supported on this platform — point your browser at the PAC URL manually (see `tailfuse serve-pac`)")
     }

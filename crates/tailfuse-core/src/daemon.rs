@@ -244,6 +244,35 @@ pub async fn tailscale_cli(socket: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// The MagicDNS suffix of the tailnet the official Tailscale client on this
+/// machine is logged into (e.g. `tail8e2dc7.ts.net`), or None when the client
+/// is not installed, running or logged in. Used by `profile import`.
+pub async fn detect_official_tailnet_suffix() -> Option<String> {
+    let bin = find_tailscale()?;
+    let out = Command::new(bin)
+        .args(["status", "--json"])
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    #[derive(Deserialize)]
+    struct St {
+        #[serde(rename = "CurrentTailnet")]
+        current: Option<Tn>,
+        #[serde(rename = "MagicDNSSuffix")]
+        magic: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct Tn {
+        #[serde(rename = "MagicDNSSuffix")]
+        magic: Option<String>,
+    }
+    let st: St = serde_json::from_slice(&out.stdout).ok()?;
+    st.current.and_then(|t| t.magic).or(st.magic)
+}
 /// Begin authenticating a profile. Returns `None` when the profile used an
 /// auth key (already done), `Some(url)` for interactive login — the caller
 /// shows/opens the URL and then calls [`login_wait`].

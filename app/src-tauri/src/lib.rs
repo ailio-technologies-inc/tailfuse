@@ -248,6 +248,38 @@ async fn login(
 }
 
 #[tauri::command]
+async fn import_from_tailscale(state: State<'_, AppState>) -> Result<String, String> {
+    let suffix = daemon::detect_official_tailnet_suffix().await.ok_or_else(|| {
+        "could not read the official Tailscale client's tailnet — is Tailscale installed, running and logged in?"
+            .to_string()
+    })?;
+    let mut cfg = state.cfg.lock().await;
+    // Reuse an existing profile that already owns this suffix.
+    if let Some((name, _)) = cfg.owner(&suffix) {
+        return Ok(format!("already imported as profile {name:?}"));
+    }
+    let name = "imported".to_string();
+    let name = if cfg.profiles.contains_key(&name) {
+        format!("imported-{suffix}")
+    } else {
+        name
+    };
+    cfg.profiles.insert(
+        name.clone(),
+        Profile {
+            suffixes: vec![format!(".{suffix}")],
+            ..Default::default()
+        },
+    );
+    cfg.validate().map_err(|e| e.to_string())?;
+    license::check(cfg.profiles.len(), &cfg.license).map_err(|e| e.to_string())?;
+    cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "imported tailnet {suffix} as profile {name:?} — press Log in to authenticate it"
+    ))
+}
+
+#[tauri::command]
 async fn add_profile(
     state: State<'_, AppState>,
     name: String,
@@ -470,6 +502,7 @@ pub fn run() {
             stop,
             login,
             add_profile,
+            import_from_tailscale,
             remove_profile,
             add_tunnel,
             remove_tunnel,

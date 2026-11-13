@@ -3905,7 +3905,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yml",
- "thiserror 2.0.21",
  "tokio",
  "tracing",
 ]

@@ -10,17 +10,15 @@
     <header>
       <div class="brand">
         <div class="logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <circle cx="6" cy="12" r="2.6" />
             <circle cx="18" cy="6" r="2.6" />
             <circle cx="18" cy="18" r="2.6" />
             <path d="M8.3 10.8 15.7 7.2M8.3 13.2 15.7 16.8" />
           </svg>
         </div>
-        <div>
-          <h1>tailfuse</h1>
-          <span id="license" class="license"></span>
-        </div>
+        <h1>tailfuse</h1>
+        <span id="license" class="license"></span>
       </div>
       <div class="header-actions">
         <label class="switch" title="Start or stop tailfuse">
@@ -35,14 +33,18 @@
       <section>
         <div class="section-head">
           <h2>Tailnets</h2>
-          <form id="add-profile" class="inline-form">
-            <input id="p-name" placeholder="name" required />
-            <input id="p-suffix" placeholder=".work.ts.net" required />
-            <button type="submit">Add profile</button>
-          </form>
+          <div class="inline-form">
+            <button id="import" type="button" title="Import the tailnet this Mac's Tailscale app is logged into">Import from Tailscale</button>
+            <form id="add-profile" class="inline-form">
+              <input id="p-name" placeholder="name" required />
+              <input id="p-suffix" placeholder=".work.ts.net" required />
+              <button type="submit">Add profile</button>
+            </form>
+          </div>
         </div>
         <ul id="profiles" class="cards"></ul>
         <p class="hint" id="profile-hint"></p>
+        <p class="hint" id="import-msg"></p>
       </section>
 
       <section>

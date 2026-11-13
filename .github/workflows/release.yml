@@ -30,7 +30,7 @@ jobs:
         run: |
           mkdir dist
           copy target\x86_64-pc-windows-msvc\release\tailfuse.exe dist\tailfuse.exe
-          Compress-Archive -Path dist\tailfuse.exe -DestinationPath dist\tailfuse-v${{ github.ref_name }}-windows-x86_64.zip
+          Compress-Archive -Path dist\tailfuse.exe -DestinationPath dist\tailfuse-${{ github.ref_name }}-windows-x86_64.zip
       - name: Create release if absent
         env:
           GH_TOKEN: ${{ github.token }}

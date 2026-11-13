@@ -110,6 +110,15 @@ $("#add-profile").addEventListener("submit", async (e) => {
   refresh();
 });
 
+$("#import").addEventListener("click", async () => {
+  try {
+    $("#import-msg").textContent = await invoke("import_from_tailscale");
+  } catch (err) {
+    $("#import-msg").textContent = String(err);
+  }
+  refresh();
+});
+
 $("#add-tunnel").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
