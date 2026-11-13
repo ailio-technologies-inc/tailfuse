@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tailfuse_core::config::{self, Config, Profile, Tunnel};
 use tailfuse_core::{daemon, license, router, sysproxy};
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
@@ -165,16 +165,20 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
         .map(|g| g.is_some())
         .unwrap_or(true);
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
+    // One live item per profile: the state is in the label, the click acts —
+    // an online profile opens the window, a logged-out one starts its login.
     for name in cfg.profiles.keys() {
         let online = stats.iter().any(|s| s.name == *name && s.online);
-        if let Ok(item) = CheckMenuItem::with_id(
-            app,
-            format!("profile-{name}"),
-            format!("{} {name}", if online { "●" } else { "○" }),
-            false,
-            online,
-            None::<&str>,
-        ) {
+        let label = if online {
+            format!("● {name}")
+        } else if is_up {
+            format!("○ {name} — log in…")
+        } else {
+            format!("○ {name}")
+        };
+        if let Ok(item) =
+            MenuItem::with_id(app, format!("profile-{name}"), label, true, None::<&str>)
+        {
             items.push(Box::new(item));
         }
     }
@@ -393,9 +397,12 @@ fn build_tray(app: &AppHandle) -> Result<()> {
     let show = MenuItem::with_id(app, "show", "Show tailfuse", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit tailfuse", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
+    // The menu-bar glyph: white-on-transparent template, tinted by macOS.
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-36.png"))?;
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .tooltip("tailfuse")
+        .icon(icon)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
                 if let Some(state) = app.try_state::<SharedState>() {
@@ -429,7 +436,49 @@ fn build_tray(app: &AppHandle) -> Result<()> {
                     });
                 }
             }
-            id if id.starts_with("profile-") => show_main_window(app),
+            id if id.starts_with("profile-") => {
+                let name = id.strip_prefix("profile-").unwrap_or_default().to_string();
+                if let Some(state) = app.try_state::<SharedState>() {
+                    let state = Arc::clone(&state);
+                    let app = AppHandle::clone(app);
+                    tauri::async_runtime::spawn(async move {
+                        let online = {
+                            let running = state.running.lock().await;
+                            match running.as_ref() {
+                                Some(r) => r
+                                    .daemons
+                                    .status()
+                                    .await
+                                    .iter()
+                                    .any(|s| s.name == name && s.online),
+                                None => false,
+                            }
+                        };
+                        if online {
+                            show_main_window(&app);
+                            return;
+                        }
+                        // Logged out: start if needed and run the browser login.
+                        let res = async {
+                            start_inner(&state).await?;
+                            let cfg = state.cfg.lock().await.clone();
+                            let url = daemon::login_start(&cfg, &name)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            if let Some(u) = url {
+                                let _ = app.opener().open_url(&u, None::<&str>);
+                                daemon::login_wait(&name).await.map_err(|e| e.to_string())?;
+                            }
+                            Ok::<_, String>(())
+                        }
+                        .await;
+                        if let Err(e) = res {
+                            tracing::warn!(profile = %name, "tray login: {e}");
+                        }
+                        refresh_tray(&app);
+                    });
+                }
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -442,8 +491,9 @@ fn build_tray(app: &AppHandle) -> Result<()> {
                 show_main_window(tray.app_handle());
             }
         });
-    if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon);
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.icon_as_template(true);
     }
     let _tray = builder.build(app)?;
     Ok(())
