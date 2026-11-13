@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tailfuse</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>tailfuse</h1>
+        <span id="license" class="license"></span>
+      </div>
+      <button id="power" class="power">Start</button>
+    </header>
+
+    <main>
+      <section>
+        <div class="section-head">
+          <h2>Profiles</h2>
+          <form id="add-profile" class="inline-form">
+            <input id="p-name" placeholder="name" required />
+            <input id="p-suffix" placeholder=".work.ts.net" required />
+            <button type="submit">Add</button>
+          </form>
+        </div>
+        <ul id="profiles" class="cards"></ul>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Tunnels</h2>
+          <form id="add-tunnel" class="inline-form">
+            <input id="t-name" placeholder="name" required />
+            <input id="t-listen" placeholder="127.0.0.1:5432" required />
+            <input id="t-target" placeholder="db.work.ts.net:5432" required />
+            <input id="t-profile" placeholder="profile" required />
+            <button type="submit">Add</button>
+          </form>
+        </div>
+        <ul id="tunnels" class="cards"></ul>
+      </section>
+
+      <section class="footer-info">
+        <div>
+          <h2>Browser routing</h2>
+          <p>
+            PAC URL: <code id="pac-url"></code> — the app sets the system PAC on
+            start (macOS/Windows) and clears its own setting on quit.
+          </p>
+          <form id="test-host" class="inline-form">
+            <input id="test-input" placeholder="nas.home-lab.ts.net" />
+            <button type="submit">Test</button>
+            <span id="test-result"></span>
+          </form>
+        </div>
+        <div>
+          <h2>License</h2>
+          <form id="activate" class="inline-form">
+            <input id="license-key" placeholder="tailfuse_…" />
+            <button type="submit">Activate</button>
+          </form>
+          <p id="license-msg"></p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

@@ -3,6 +3,7 @@ members = [
     "crates/tailfuse-core",
     "crates/tailfuse-cli",
     "crates/licgen",
+    "app/src-tauri",
 ]
 resolver = "2"
 
@@ -14,3 +15,6 @@ license = "MIT"
 [profile.release]
 lto = true
 strip = true
+
+# The Tauri app sets its own release profile (codegen-units=1 etc.) in
+# app/src-tauri/Cargo.toml, which takes precedence for that package.

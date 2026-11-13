@@ -83,6 +83,29 @@ tunnels:
 - **PAC** — a generated proxy auto-config routes only owned suffixes through the router and everything else direct; served live at `/tailfuse.pac` and applied to the OS on `up`.
 - **Isolation** — profiles share no state, sockets, or routes; suffix overlaps are rejected at config validation.
 
+## Desktop app
+
+A Tauri menu-bar app (`app/`) wraps the same core: profile status, one-click
+login (opens the browser auth flow), tunnel management, license activation,
+and a system-tray quit that cleans up the PAC and the embedded nodes. It runs
+entirely as your user — no root helper, no kernel extension; the only system
+setting it touches is the PAC URL, which it refuses to overwrite if it isn't
+its own.
+
+```sh
+cd app && npm install && npm run tauri dev   # develop
+npm run tauri build                          # signed bundle (dmg/msi/appimage)
+```
+
+## Repo layout
+
+| Path | What |
+|---|---|
+| `crates/tailfuse-core` | Config, per-tailnet daemon management, loopback router, PAC, tunnels, system proxy, licensing |
+| `crates/tailfuse-cli` | The `tailfuse` binary (also used by the app's SSH path) |
+| `crates/licgen` | Vendor-only license key signer (not distributed) |
+| `app/` | Tauri menu-bar app (Rust + vanilla frontend) |
+
 ## Pricing
 
 **Free for up to 2 tailnet profiles — forever.** More profiles need a license key (one-time purchase, updates included for a year, your version keeps working after that). Keys are signed and verified offline — no phone-home, no account, no telemetry.

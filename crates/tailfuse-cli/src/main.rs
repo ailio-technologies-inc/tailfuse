@@ -513,7 +513,12 @@ async fn cmd_profile(action: ProfileAction) -> Result<()> {
                 config::profile_state_dir(&name).display()
             );
         }
-        ProfileAction::Login { name } => daemon::login(&cfg, &name).await?,
+        ProfileAction::Login { name } => match daemon::login(&cfg, &name).await? {
+            Some(url) => println!(
+                "open this URL to authenticate profile {name:?}:\n\n  {url}\n\nauthenticated."
+            ),
+            None => println!("profile {name:?} authenticated via auth key"),
+        },
     }
     Ok(())
 }

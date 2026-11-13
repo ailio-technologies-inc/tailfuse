@@ -251,9 +251,10 @@ pub async fn tailscale_cli(socket: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-/// Authenticate one profile. With an auth key this is unattended; otherwise
-/// prints a login URL and waits for completion.
-pub async fn login(cfg: &config::Config, name: &str) -> Result<()> {
+/// Begin authenticating a profile. Returns `None` when the profile used an
+/// auth key (already done), `Some(url)` for interactive login — the caller
+/// shows/opens the URL and then calls [`login_wait`].
+pub async fn login_start(cfg: &config::Config, name: &str) -> Result<Option<String>> {
     let prof = cfg
         .profiles
         .get(name)
@@ -268,36 +269,41 @@ pub async fn login(cfg: &config::Config, name: &str) -> Result<()> {
             &["up", "--auth-key", &prof.auth_key, "--accept-dns=false"],
         )
         .await?;
-        println!("profile {name:?} authenticated via auth key");
-        return Ok(());
+        return Ok(None);
     }
-    // Interactive: print the auth URL.
     let out = match tailscale_cli(&socket, &["login", "--accept-dns=false"]).await {
         Ok(o) => o,
         Err(_) => tailscale_cli(&socket, &["up", "--accept-dns=false"]).await?,
     };
-    for line in out.lines() {
-        if line.contains("http") {
-            println!(
-                "open this URL to authenticate profile {name:?}:\n\n  {}\n\nwaiting… ",
-                line.trim()
-            );
-            break;
-        }
-    }
-    // Poll until authenticated.
+    Ok(out
+        .lines()
+        .find(|l| l.contains("http"))
+        .map(|l| l.trim().to_string()))
+}
+
+/// Poll until the profile finishes authenticating (or ~8 minutes pass).
+pub async fn login_wait(name: &str) -> Result<()> {
+    let socket = config::profile_socket(name);
     for _ in 0..240 {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         if let Ok(text) = tailscale_cli(&socket, &["status", "--json"]).await {
             if let Ok(st) = serde_json::from_str::<StatusJson>(&text) {
                 if st.backend_state.as_deref() == Some("Running") {
-                    println!("authenticated.");
                     return Ok(());
                 }
             }
         }
     }
     bail!("timed out waiting for authentication")
+}
+
+/// Convenience: start + wait, returning the URL when interactive.
+pub async fn login(cfg: &config::Config, name: &str) -> Result<Option<String>> {
+    let url = login_start(cfg, name).await?;
+    if url.is_some() {
+        login_wait(name).await?;
+    }
+    Ok(url)
 }
 
 /// Best-effort application of accept_routes / exit_node on an already-auth'd profile.
