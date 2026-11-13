@@ -24,9 +24,13 @@
 
 body { min-height: 100vh; display: flex; flex-direction: column; overflow-y: auto; }
 
-/* the header doubles as the window's title bar: drag it, keep controls live */
+/* the header doubles as the window's title bar. Dragging comes from
+   data-tauri-drag-region="deep" on the element (Tauri ignores -webkit-app-region);
+   labels, inputs and buttons inside it stay clickable. */
 .titlebar {
-  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -36,7 +40,6 @@ body { min-height: 100vh; display: flex; flex-direction: column; overflow-y: aut
   border-bottom: 1px solid var(--line);
   flex: none;
 }
-.titlebar * { -webkit-app-region: no-drag; }
 
 .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 h1 { font-size: 15px; font-weight: 500; letter-spacing: -0.01em; white-space: nowrap; }
