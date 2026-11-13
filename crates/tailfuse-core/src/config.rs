@@ -84,10 +84,23 @@ pub fn default_config_path() -> PathBuf {
     if let Ok(dir) = std::env::var("TAILFUSE_CONFIG_DIR") {
         return PathBuf::from(dir).join("config.yaml");
     }
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("tailfuse")
-        .join("config.yaml")
+    // Unix (macOS and Linux): ~/.config/tailfuse, the path the README
+    // documents and the CLI user expects. Windows: the platform config dir.
+    #[cfg(unix)]
+    {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".config")
+            .join("tailfuse")
+            .join("config.yaml")
+    }
+    #[cfg(not(unix))]
+    {
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("tailfuse")
+            .join("config.yaml")
+    }
 }
 
 pub fn state_dir() -> PathBuf {
