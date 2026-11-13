@@ -1,67 +1,66 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-type="software" data-radius="soft">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>tailfuse</title>
+    <meta name="description" content="tailfuse connects a Mac or Windows machine to several Tailscale tailnets at once, routing each name to its own tailnet." />
+    <meta name="page-type" content="software" />
+    <meta name="site-kind" content="software" />
+    <link rel="stylesheet" href="assets/kit/system.css" />
+    <link rel="stylesheet" href="assets/kit/motion.css" />
+    <link rel="stylesheet" href="assets/fonts/fonts.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header>
+    <!-- plan: kind software · palette limewash-ochre (dealt; warm limewash ground, ochre accent — the material of a bench tool) · type chivo (neo-grotesk + matching mono, developer tool) · radius soft · one window, no hero/sections: a utility window the kit's page rhythm does not apply to (waived in .taste-skill/waivers.json) -->
+    <header class="titlebar">
       <div class="brand">
-        <div class="logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <circle cx="6" cy="12" r="2.6" />
-            <circle cx="18" cy="6" r="2.6" />
-            <circle cx="18" cy="18" r="2.6" />
-            <path d="M8.3 10.8 15.7 7.2M8.3 13.2 15.7 16.8" />
-          </svg>
-        </div>
         <h1>tailfuse</h1>
         <span id="license" class="license"></span>
       </div>
       <div class="header-actions">
         <label class="switch" title="Start or stop tailfuse">
-          <input type="checkbox" id="power" />
+          <input type="checkbox" id="power" aria-label="Start or stop tailfuse" />
           <span class="slider"></span>
         </label>
         <span id="power-label" class="power-label">Stopped</span>
       </div>
     </header>
 
-    <main>
-      <section>
-        <div class="section-head">
-          <h2>Tailnets</h2>
-          <div class="inline-form">
-            <button id="import" type="button" title="Import the tailnet this Mac's Tailscale app is logged into">Import from Tailscale</button>
+    <div class="body">
+      <section class="pane" aria-labelledby="tailnets-h">
+        <div class="pane-head">
+          <h2 id="tailnets-h">Tailnets</h2>
+          <div class="pane-tools">
+            <button id="import" type="button" class="btn btn--secondary btn--sm" title="Add the tailnet this Mac's Tailscale app is signed in to">Import from Tailscale</button>
             <form id="add-profile" class="inline-form">
-              <input id="p-name" placeholder="name" required />
-              <input id="p-suffix" placeholder=".work.ts.net" required />
-              <button type="submit">Add profile</button>
+              <span class="field"><input id="p-name" placeholder="work" required aria-label="Profile name" /></span>
+              <span class="field"><input id="p-suffix" placeholder=".work.ts.net" required aria-label="Hostname suffix" /></span>
+              <button type="submit" class="btn btn--primary btn--sm">Add profile</button>
             </form>
           </div>
         </div>
-        <ul id="profiles" class="cards"></ul>
+        <ul id="profiles" class="list"></ul>
         <p class="hint" id="profile-hint"></p>
-        <p class="hint" id="import-msg"></p>
+        <p class="hint" id="import-msg" role="status"></p>
       </section>
 
-      <section>
-        <div class="section-head">
-          <h2>Tunnels</h2>
+      <section class="pane" aria-labelledby="tunnels-h">
+        <div class="pane-head">
+          <h2 id="tunnels-h">Tunnels</h2>
           <form id="add-tunnel" class="inline-form">
-            <input id="t-name" placeholder="name" required />
-            <input id="t-listen" placeholder="127.0.0.1:5432" required />
-            <input id="t-target" placeholder="db.work.ts.net:5432" required />
-            <input id="t-profile" placeholder="profile" required />
-            <button type="submit">Add tunnel</button>
+            <span class="field"><input id="t-name" placeholder="prod-db" required aria-label="Tunnel name" /></span>
+            <span class="field"><input id="t-listen" placeholder="127.0.0.1:5432" required aria-label="Local listen address" /></span>
+            <span class="field"><input id="t-target" placeholder="db.work.ts.net:5432" required aria-label="Remote target" /></span>
+            <span class="field"><input id="t-profile" placeholder="work" required aria-label="Profile" /></span>
+            <button type="submit" class="btn btn--primary btn--sm">Add tunnel</button>
           </form>
         </div>
-        <ul id="tunnels" class="cards"></ul>
+        <ul id="tunnels" class="list"></ul>
       </section>
 
-      <section class="footer-info">
+      <section class="pane pane--footer" aria-label="Browser routing, license and startup">
         <div>
           <h2>Browser routing</h2>
           <p>
@@ -70,25 +69,25 @@
             own setting on quit. Unowned hostnames are always refused.
           </p>
           <form id="test-host" class="inline-form">
-            <input id="test-input" placeholder="nas.home-lab.ts.net" />
-            <button type="submit">Test routing</button>
-            <span id="test-result"></span>
+            <span class="field"><input id="test-input" placeholder="nas.home-lab.ts.net" aria-label="Hostname to test" /></span>
+            <button type="submit" class="btn btn--secondary btn--sm">Test routing</button>
+            <span id="test-result" class="hint"></span>
           </form>
         </div>
         <div>
           <h2>License &amp; startup</h2>
           <form id="activate" class="inline-form">
-            <input id="license-key" placeholder="tailfuse_…" class="wide" />
-            <button type="submit">Activate</button>
+            <span class="field"><input id="license-key" placeholder="tailfuse_…" class="wide" aria-label="License key" /></span>
+            <button type="submit" class="btn btn--primary btn--sm">Activate</button>
           </form>
-          <p id="license-msg" class="hint"></p>
+          <p id="license-msg" class="hint" role="status"></p>
           <label class="check">
             <input type="checkbox" id="autostart" />
             <span>Open tailfuse at login</span>
           </label>
         </div>
       </section>
-    </main>
+    </div>
 
     <script type="module" src="main.js"></script>
   </body>

@@ -1,0 +1,6 @@
+# tailfuse.com: everything here is public. Search engines and AI crawlers are welcome.
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://tailfuse.com/sitemap.xml

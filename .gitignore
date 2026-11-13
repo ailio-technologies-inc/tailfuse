@@ -3,3 +3,8 @@
 .DS_Store
 dist/
 node_modules/
+
+# design-taste skill artifacts (checks only, not shipped logic)
+app/.taste-skill/
+app/src/preview.html
+app/src/preview-stub.js

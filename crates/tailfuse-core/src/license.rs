@@ -15,7 +15,7 @@ pub const FREE_PROFILES: usize = 2;
 
 /// Vendor public key (base64url, 32 bytes). Generate a pair with
 /// `licgen --gen-keys` and paste the public half here before issuing keys.
-const PUBKEY: &str = "wB4m22qwhcqVabZC3NeXs3JAkjjbMwFmHyawJM_wwLI";
+const PUBKEY: &str = "x8npEBh1O8tGJrsosmTYcUomleSlPP9fB6Qa0TvzJNI";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct License {

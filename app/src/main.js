@@ -27,7 +27,7 @@ async function refresh() {
   ul.innerHTML = "";
   for (const p of s.profiles) {
     const li = document.createElement("li");
-    li.className = "card";
+    li.className = "entry";
     const state = p.error
       ? `error: ${p.error}`
       : p.online
@@ -37,15 +37,15 @@ async function refresh() {
           : "stopped";
     li.innerHTML = `
       <span class="dot ${p.online ? "on" : ""}"></span>
-      <div class="card-body">
+      <div class="entry-main">
         <strong>${escapeHtml(p.name)}</strong>
         <span class="mono muted">${p.suffixes.map(escapeHtml).join("  ")}</span>
         <span class="muted">${escapeHtml([p.hostname, ...p.ips].filter(Boolean).join(" · "))}</span>
       </div>
-      <div class="card-actions">
+      <div class="entry-actions">
         <span class="pill ${p.online ? "pill-on" : ""}">${escapeHtml(state)}</span>
-        ${!p.online && s.up ? `<button data-login="${escapeHtml(p.name)}">Log in</button>` : ""}
-        <button class="icon danger" title="Remove profile" data-remove-profile="${escapeHtml(p.name)}">✕</button>
+        ${!p.online && s.up ? `<button class="btn btn--primary btn--sm" data-login="${escapeHtml(p.name)}">Log in</button>` : ""}
+        <button class="btn btn--secondary btn--sm" title="Remove profile" data-remove-profile="${escapeHtml(p.name)}">Remove</button>
       </div>`;
     ul.appendChild(li);
   }
@@ -54,16 +54,16 @@ async function refresh() {
   tl.innerHTML = "";
   for (const t of s.tunnels) {
     const li = document.createElement("li");
-    li.className = "card";
+    li.className = "entry";
     li.innerHTML = `
       <span class="dot tunnel"></span>
-      <div class="card-body">
+      <div class="entry-main">
         <strong>${escapeHtml(t.name)}</strong>
         <span class="mono muted">${escapeHtml(t.listen)} → ${escapeHtml(t.target)}</span>
         <span class="muted">via ${escapeHtml(t.profile)}</span>
       </div>
-      <div class="card-actions">
-        <button class="icon danger" title="Remove tunnel" data-remove-tunnel="${escapeHtml(t.name)}">✕</button>
+      <div class="entry-actions">
+        <button class="btn btn--secondary btn--sm" title="Remove tunnel" data-remove-tunnel="${escapeHtml(t.name)}">Remove</button>
       </div>`;
     tl.appendChild(li);
   }

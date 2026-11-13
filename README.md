@@ -110,7 +110,7 @@ npm run tauri build                          # signed bundle (dmg/msi/appimage)
 
 ## Pricing
 
-**Free for up to 2 tailnet profiles — forever.** More profiles need a license key (one-time purchase, updates included for a year, your version keeps working after that). Keys are signed and verified offline — no phone-home, no account, no telemetry.
+**Free for up to 2 tailnet profiles — forever.** More profiles need a license key, which is by optional donation: get one at [tailfuse.com](https://tailfuse.com/#pricing) for any amount from $0 up (updates included for a year, your version keeps working after that). Keys are signed and verified offline — no phone-home, no account, no telemetry.
 
 ```sh
 tailfuse license activate tailfuse_eyJ...__...

@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tailfuse: connect to several Tailscale tailnets at once</title>
+<meta name="description" content="Tailfuse keeps several Tailscale tailnets online at once on macOS, Windows and Linux, and routes each hostname to the tailnet that owns it. Free for two tailnets; a license for more is by optional donation.">
+<link rel="canonical" href="https://tailfuse.com/">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="author" content="Ailio Technologies Inc.">
+<meta name="theme-color" content="#18191b">
+<meta name="color-scheme" content="dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Tailfuse">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://tailfuse.com/">
+<meta property="og:title" content="Tailfuse: several Tailscale tailnets, online at once">
+<meta property="og:description" content="One Tailscale node per tailnet and a local router that sends each hostname to the tailnet that owns it. Free for two tailnets; a license for more is by optional donation.">
+<meta property="og:image" content="https://tailfuse.com/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Tailfuse: several Tailscale tailnets, online at once. One ring on the left feeds two orange lanes running to the right.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Tailfuse: several Tailscale tailnets, online at once">
+<meta name="twitter:description" content="One Tailscale node per tailnet and a local router that sends each hostname to the tailnet that owns it. Free for two tailnets.">
+<meta name="twitter:image" content="https://tailfuse.com/og.png">
+<meta name="twitter:image:alt" content="Tailfuse: several Tailscale tailnets, online at once.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-48.png" type="image/png" sizes="48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="alternate" type="text/markdown" href="/llms.txt" title="Tailfuse, a plain-text summary for language models">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400..500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://ailio.ca/#organization",
+      "name": "Ailio Technologies Inc.",
+      "url": "https://ailio.ca/"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://tailfuse.com/#website",
+      "url": "https://tailfuse.com/",
+      "name": "Tailfuse",
+      "inLanguage": "en",
+      "publisher": { "@id": "https://ailio.ca/#organization" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://tailfuse.com/#software",
+      "name": "Tailfuse",
+      "url": "https://tailfuse.com/",
+      "image": "https://tailfuse.com/og.png",
+      "description": "Tailfuse connects one machine to several Tailscale tailnets at once. It runs one userspace Tailscale node per tailnet and a loopback router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it.",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Networking",
+      "operatingSystem": "macOS, Windows, Linux",
+      "downloadUrl": "https://tailfuse.com/download",
+      "installUrl": "https://tailfuse.com/#install",
+      "license": "https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE",
+      "isAccessibleForFree": true,
+      "sameAs": ["https://github.com/ailio-technologies-inc/tailfuse"],
+      "author": { "@id": "https://ailio.ca/#organization" },
+      "publisher": { "@id": "https://ailio.ca/#organization" },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "description": "Free for two tailnet profiles. A license key for more profiles is by optional donation, from $0."
+      },
+      "featureList": [
+        "Several Tailscale tailnets online at once",
+        "Routing by hostname suffix through one local port, 127.0.0.1:43100",
+        "SOCKS5, HTTP CONNECT and a generated PAC file",
+        "Hostnames no profile owns are refused, never sent to another tailnet",
+        "Tunnels that pin a local port to a tailnet service",
+        "Menu-bar app and a tailfuse command-line tool"
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://tailfuse.com/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What does a Tailfuse license cost?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Whatever you choose, including nothing. Two tailnets are free. A license key for more is by optional donation, and a $0 key is the same key as a $10 one." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Tailfuse made by Tailscale?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Tailfuse is an independent tool. It runs the tailscaled binary, which stays under the Tailscale terms." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Tailfuse replace the Tailscale app?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. An installed Tailscale client keeps owning the primary tailnet, and Tailfuse adds the others beside it." }
+        },
+        {
+          "@type": "Question",
+          "name": "Can a server log in to a tailnet unattended?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Put a Tailscale auth key in that profile's config and it signs in with no browser step." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<main id="main">
+
+<!-- Hero: centred headline over the app's own window, rising out of a lit frame. The power switch works. -->
+<section class="hero" id="top">
+<header class="nav wrap">
+<a class="brand" href="#top" aria-label="Tailfuse, home">
+<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="12" r="2.9"></circle><path d="M8.4 10.1C10.6 8.2 12.2 7.3 15.4 7.3H21.5M8.4 13.9C10.6 15.8 12.2 16.7 15.4 16.7H21.5"></path></svg>
+<span>tailfuse</span>
+</a>
+<nav class="nav__links" aria-label="Sections">
+<a class="link" href="#routing">Routing</a>
+<a class="link" href="#isolation">Isolation</a>
+<a class="link" href="#cli">Command line</a>
+<a class="link" href="#pricing">License</a>
+</nav>
+<div class="nav__side">
+<a class="link nav__gh" href="https://github.com/ailio-technologies-inc/tailfuse">GitHub</a>
+<a class="btn btn--sm" href="/download">Download Tailfuse</a>
+</div>
+</header>
+
+<div class="hero__text wrap">
+<a class="notice" href="#pricing"><span class="notice__dot"></span>Free for two tailnets</a>
+<h1>Several Tailscale tailnets, online at once.</h1>
+<p class="lead">Tailfuse is a menu-bar app for macOS, Windows and Linux. It runs one Tailscale node per tailnet and sends each hostname to the tailnet that owns it.</p>
+<div class="hero__actions">
+<a class="btn" href="/download">Download Tailfuse</a>
+<a class="btn btn--quiet" href="#cli">Get the command line</a>
+</div>
+</div>
+
+<div class="frame wrap">
+<div class="win" id="app-window" data-running="true">
+<div class="win__bar">
+<div class="win__id">
+<div class="win__mark">
+<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="12" r="2.9"></circle><path d="M8.4 10.1C10.6 8.2 12.2 7.3 15.4 7.3H21.5M8.4 13.9C10.6 15.8 12.2 16.7 15.4 16.7H21.5"></path></svg>
+</div>
+<div class="win__name">
+<span class="win__title">tailfuse</span>
+<span class="win__sub">unlicensed (2/2 free profiles)</span>
+</div>
+</div>
+<div class="win__power">
+<button class="switch" id="power" type="button" role="switch" aria-checked="true" aria-label="Start or stop tailfuse"><span class="switch__track"></span><span class="switch__knob"></span></button>
+<span class="win__state" id="power-label">Running</span>
+</div>
+</div>
+
+<div class="win__body">
+<div class="win__group">
+<div class="win__head"><span class="win__label">Tailnets</span><span class="win__sub">2/2 free profiles</span></div>
+<div class="card">
+<span class="card__dot"></span>
+<div class="card__text"><strong>personal</strong><span class="card__mono">.home-lab.ts.net</span><span class="win__sub">studio-mac · 100.101.14.9</span></div>
+<span class="card__pill">online</span>
+</div>
+<div class="card">
+<span class="card__dot"></span>
+<div class="card__text"><strong>work</strong><span class="card__mono">.work.ts.net  .internal.example</span><span class="win__sub">studio-mac · 100.72.203.41</span></div>
+<span class="card__pill">online</span>
+</div>
+</div>
+<div class="win__group">
+<span class="win__label">Tunnels</span>
+<div class="card">
+<span class="card__dot card__dot--blue"></span>
+<div class="card__text"><strong>prod-db</strong><span class="card__mono">127.0.0.1:5432 → db.work.ts.net:5432</span><span class="win__sub">via work</span></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Routing: type a hostname and the matching lane lights. The result line is the CLI's own output. -->
+<section class="section" id="routing">
+<div class="wrap stack-48">
+<div class="split">
+<div class="split__text">
+<h2>Type a hostname, see its tailnet</h2>
+<p class="lead">Tailfuse matches each hostname against the suffixes your profiles own. The longest match wins, and a name nobody owns is refused.</p>
+</div>
+<div class="tester">
+<label for="host">Hostname</label>
+<input id="host" type="text" value="wiki.work.ts.net" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url">
+<div class="tester__picks">
+<button class="pick" type="button" data-host="wiki.work.ts.net">wiki.work.ts.net</button>
+<button class="pick" type="button" data-host="nas.home-lab.ts.net">nas.home-lab.ts.net</button>
+<button class="pick" type="button" data-host="db.internal.example">db.internal.example</button>
+<button class="pick" type="button" data-host="example.com">example.com</button>
+</div>
+</div>
+</div>
+
+<div class="lanes">
+<div class="lane" data-lane="personal">
+<div class="lane__from"><span class="lane__suffix">.home-lab.ts.net</span><span class="lane__note">home-lab suffix</span></div>
+<div class="wire"><span class="pulse"></span></div>
+<span class="lane__pill">profile personal</span>
+<div class="wire"><span class="pulse"></span></div>
+<div class="lane__to"><span class="lane__daemon">tailscaled #1</span><span class="lane__note">home-lab tailnet</span></div>
+</div>
+<div class="lane is-on" data-lane="work">
+<div class="lane__from"><span class="lane__suffix">.work.ts.net</span><span class="lane__note lane__note--mono">.internal.example</span></div>
+<div class="wire"><span class="pulse"></span></div>
+<span class="lane__pill">profile work</span>
+<div class="wire"><span class="pulse"></span></div>
+<div class="lane__to"><span class="lane__daemon">tailscaled #2</span><span class="lane__note">work tailnet</span></div>
+</div>
+<div class="lane lane--none" data-lane="none">
+<div class="lane__from"><span class="lane__suffix">any other hostname</span><span class="lane__note">no suffix matches</span></div>
+<div class="wire"><span class="pulse"></span></div>
+<span class="lane__pill">no owner</span>
+<div class="wire wire--cut"></div>
+<div class="lane__to"><span class="lane__refused">Refused by the router</span><span class="lane__note">browsers connect direct</span></div>
+</div>
+
+<div class="term term--result" aria-live="polite">
+<div class="term__cmd"><span class="term__prompt">$</span> <span id="test-cmd">tailfuse test wiki.work.ts.net</span></div>
+<div id="test-out">wiki.work.ts.net → profile "work"</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- The light band: the router's one address set as large as the page allows. Its characters fly in on scroll. -->
+<section class="section band" id="port">
+<div class="wrap band__col">
+<h2>One local port in front of every tailnet</h2>
+<div class="addr" role="img" aria-label="127.0.0.1:43100"><span>1</span><span>2</span><span>7</span><span>.</span><span>0</span><span>.</span><span>0</span><span>.</span><span>1</span><span class="addr__port">:</span><span class="addr__port">4</span><span class="addr__port">3</span><span class="addr__port">1</span><span class="addr__port">0</span><span class="addr__port">0</span></div>
+<div class="facts">
+<div class="fact"><h3>SOCKS5</h3><p>The proxy that tailfuse run hands to a command, with DNS resolved on the tailnet side.</p></div>
+<div class="fact"><h3>HTTP CONNECT</h3><p>The same port answers tools that only take an HTTP proxy.</p></div>
+<div class="fact"><h3>/tailfuse.pac</h3><p>Browsers read the PAC file, send owned hostnames to the router and connect direct for the rest.</p></div>
+</div>
+</div>
+</section>
+
+<!-- Isolation: four facts in two uneven rows, each with the line that proves it. -->
+<section class="section" id="isolation">
+<div class="wrap stack-48">
+<div class="head">
+<h2>Isolation between tailnets</h2>
+<p class="lead">Two full Tailscale daemons fight over routes, DNS and firewall rules. Tailfuse runs each tailnet in userspace networking mode, so the kernel routing table stays as it was.</p>
+</div>
+<div class="bento">
+<div class="tile tile--wide">
+<h3>Leaves your Tailscale client alone</h3>
+<p>Each tailnet runs without a TUN device, a route or a DNS change. The official client keeps its primary tailnet.</p>
+<div class="frag">tailscaled <span class="accent">--tun=userspace-networking</span></div>
+</div>
+<div class="tile">
+<h3>Refuses hostnames nobody owns</h3>
+<p>Each suffix belongs to one profile and overlaps fail validation. An unowned name is refused, never sent to another tailnet.</p>
+<div class="frag">suffixes: [.work.ts.net, .internal.example]</div>
+</div>
+<div class="tile">
+<h3>Runs as your user</h3>
+<p>Tailfuse installs neither a root helper nor a kernel extension. The one system setting it changes is the PAC URL, cleared when you quit.</p>
+<div class="frag">http://127.0.0.1:43100/tailfuse.pac</div>
+</div>
+<div class="tile tile--wide">
+<h3>Pins a local port to a tailnet service</h3>
+<p>A tunnel maps a port on this machine to one service on one tailnet, so a database client connects with no proxy settings.</p>
+<div class="frag frag--tunnel"><span>127.0.0.1:5432</span><span class="frag__wire"></span><span class="frag__pill">profile work</span><span class="frag__wire"></span><span>db.work.ts.net:5432</span></div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Command line: the config file beside the commands, set as an index in the mono face. -->
+<section class="section" id="cli">
+<div class="wrap split">
+<div class="split__text">
+<h2>The same router in a terminal</h2>
+<p class="lead">The tailfuse command shares its core with the menu-bar app. Both read one config file.</p>
+<div class="term term--file">
+<div class="term__name">~/.config/tailfuse/config.yaml</div>
+<pre><span class="accent">profiles</span>:
+  <span class="accent">personal</span>:
+    suffixes: [.home-lab.ts.net]
+  <span class="accent">work</span>:
+    suffixes: [.work.ts.net, .internal.example]
+    accept_routes: true
+    exit_node: exit-us
+<span class="accent">tunnels</span>:
+  - name: prod-db
+    profile: work
+    listen: 127.0.0.1:5432
+    target: db.work.ts.net:5432</pre>
+</div>
+</div>
+<div class="cmds">
+<div class="cmd"><code>tailfuse profile login work</code><span>Signs a profile in through the browser, once per tailnet.</span></div>
+<div class="cmd"><code>tailfuse up</code><span>Starts everything and sets the system PAC.</span></div>
+<div class="cmd"><code>tailfuse status</code><span>Shows each profile's state, hostname and Tailscale IPs.</span></div>
+<div class="cmd"><code>tailfuse ssh user@host.work.ts.net</code><span>Opens SSH through the profile that owns the host.</span></div>
+<div class="cmd"><code>tailfuse run curl http://wiki.work.ts.net</code><span>Runs any command with the proxy environment set.</span></div>
+<div class="cmd"><code>tailfuse env</code><span>Prints the proxy environment for your shell.</span></div>
+<div class="cmd"><code>tailfuse down</code><span>Clears the system PAC.</span></div>
+</div>
+<div class="cli-install" id="install-cli">
+<h3>Install the command line</h3>
+<div class="installs">
+<div class="install"><span>Download</span><div class="install__links"><a class="link" href="/download/cli/macos">macOS, universal</a><a class="link" href="/download/cli/windows">Windows, x86-64</a><a class="link" href="/download/cli/linux-amd64">Linux, x86-64</a><a class="link" href="/download/cli/linux-arm64">Linux, arm64</a></div></div>
+<div class="install"><span>macOS</span><code>brew install ailio-technologies-inc/tap/tailfuse</code></div>
+<div class="install"><span>Windows</span><code>winget install ailio-technologies-inc.tailfuse</code></div>
+<div class="install"><span>Cargo</span><code>cargo install --git https://github.com/ailio-technologies-inc/tailfuse tailfuse-cli</code></div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- License: two profiles are free; a key for more is by optional donation. The form asks the Worker for a key. -->
+<section class="section" id="pricing">
+<div class="wrap split">
+<div class="plans">
+<div class="head">
+<h2>A license by optional donation</h2>
+<p class="lead">Two tailnets are free, forever. A third profile needs a license key, and the key costs what you choose: nothing, $10, or more. Keys are signed and verified offline: no phone-home, no account, no telemetry.</p>
+</div>
+<div class="slots">
+<div class="slot slot--lit"><span class="slot__n">1</span><div><strong>First profile</strong><span>Free, forever</span></div></div>
+<div class="slot slot--lit"><span class="slot__n">2</span><div><strong>Second profile</strong><span>Free, forever</span></div></div>
+<div class="slot slot--key"><span class="slot__n">3+</span><div><strong>Every profile after that</strong><span>A license key, by optional donation. Updates for a year, and your version keeps working after that.</span></div></div>
+</div>
+<div class="faq">
+<div class="faq__row"><h3>What does a license cost?</h3><p>Whatever you choose, including nothing. The donation is optional, and a $0 key is the same key as a $10 one.</p></div>
+<div class="faq__row"><h3>Is Tailfuse made by Tailscale?</h3><p>No. Tailfuse is an independent tool. It runs the tailscaled binary, which stays under the Tailscale terms.</p></div>
+<div class="faq__row"><h3>Does it replace the Tailscale app?</h3><p>No. An installed Tailscale client keeps owning the primary tailnet, and Tailfuse adds the others beside it.</p></div>
+<div class="faq__row"><h3>Can a server log in unattended?</h3><p>Yes. Put a Tailscale auth key in that profile's config and it signs in with no browser step.</p></div>
+</div>
+</div>
+
+<form class="donate" id="donate" novalidate>
+<h3>Get a license key</h3>
+<div class="donate__amount" aria-hidden="true"><span>$</span><span id="amount-out">5</span></div>
+<div class="field">
+<label for="amount-range">Optional donation, in US dollars</label>
+<input type="range" id="amount-range" min="0" max="10" step="1" value="5">
+<div class="donate__scale" aria-hidden="true"><span>$0</span><span>$5</span><span>$10</span></div>
+</div>
+<div class="field">
+<label for="amount-box">Or type any amount, $0 and up</label>
+<input type="number" id="amount-box" min="0" max="1000" step="1" value="5" inputmode="numeric">
+</div>
+<div class="field">
+<label for="email">Email to put on the license</label>
+<input type="email" id="email" name="email" autocomplete="email" required>
+</div>
+<button class="btn" type="submit" id="donate-go">Donate $5 and get a key</button>
+<p class="donate__note" id="donate-note" role="status">The donation is optional. Card payments run on Stripe.</p>
+<div class="donate__result" id="donate-result" hidden>
+<p>Your license key, issued to <strong id="key-email"></strong>:</p>
+<textarea id="key-box" rows="5" readonly aria-label="License key" spellcheck="false"></textarea>
+<button class="btn btn--quiet" type="button" id="key-copy">Copy the key</button>
+<div class="frag frag--line"><span class="accent">$</span> tailfuse license activate &lt;key&gt;</div>
+</div>
+</form>
+</div>
+</section>
+
+</main>
+
+<!-- Close and footer: one large line that ripples under the pointer, one large button, the downloads and install commands, the legal row. -->
+<footer class="close" id="install">
+<svg width="0" height="0" aria-hidden="true" class="defs"><filter id="liquid" x="-5%" y="-20%" width="110%" height="140%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.013" numOctaves="1" seed="7" result="n"></feTurbulence><feDisplacementMap in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap></filter></svg>
+<div class="wrap close__col">
+<div class="close__head">
+<h2 class="close__type" id="close-type">Bring your tailnets online.</h2>
+<p class="lead">The menu-bar app for macOS, Windows and Linux. Downloads come straight from GitHub Releases.</p>
+</div>
+<a class="btn btn--xl" href="/download">Download Tailfuse<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v14M6 12l6 6 6-6"></path></svg></a>
+<div class="installs">
+<div class="install"><span>The app</span><div class="install__links"><a class="link" href="/download/app/macos">macOS, universal .dmg</a><a class="link" href="/download/app/windows">Windows, x86-64 installer</a><a class="link" href="/download/app/linux">Linux, x86-64 AppImage</a><a class="link" href="/download/app/linux-deb">Linux, x86-64 .deb</a></div></div>
+<div class="install"><span>Command line</span><div class="install__links"><a class="link" href="#install-cli">Downloads and install commands</a></div></div>
+</div>
+<div class="legal">
+<span>© 2026 <a class="link" href="https://ailio.ca/">Ailio Technologies Inc.</a> Tailfuse is an independent tool, not affiliated with or endorsed by Tailscale Inc.</span>
+<nav aria-label="Footer">
+<a class="link" href="https://github.com/ailio-technologies-inc/tailfuse">GitHub</a>
+<a class="link" href="https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE">MIT license</a>
+<a class="link" href="#pricing">License key</a>
+<a class="link" href="/privacy">Privacy</a>
+</nav>
+</div>
+</div>
+</footer>
+
+<script src="/main.js" defer></script>
+</body>
+</html>

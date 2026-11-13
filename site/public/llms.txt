@@ -1,0 +1,78 @@
+# Tailfuse
+
+> Tailfuse connects one machine to several Tailscale tailnets at once. It runs one userspace Tailscale node per tailnet and a loopback router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it. It is a menu-bar app and a `tailfuse` command-line tool for macOS, Windows and Linux. Free for two tailnets; a license key for more is by optional donation, from $0.
+
+Tailfuse is made by Ailio Technologies Inc. (https://ailio.ca). It is an independent tool, not affiliated with or endorsed by Tailscale Inc. The source is MIT licensed. `tailscaled` and `tailscale` are separate Tailscale binaries under the Tailscale terms.
+
+## What it does
+
+- Several tailnets online at once: no VM, no account switching, no second full Tailscale daemon.
+- Each tailnet runs in userspace networking mode (`tailscaled --tun=userspace-networking`): no TUN device, no routes, no DNS changes. An installed Tailscale client keeps its primary tailnet.
+- One local router on `127.0.0.1:43100` speaks SOCKS5 and HTTP CONNECT and serves a PAC file at `http://127.0.0.1:43100/tailfuse.pac`.
+- Routing is by hostname suffix. Each profile owns suffixes such as `.work.ts.net`; the longest match wins.
+- A hostname no profile owns is refused, never sent to another tailnet. Browsers using the PAC file connect direct for those names.
+- Tunnels pin a local port to one tailnet service, for example `127.0.0.1:5432` to `db.work.ts.net:5432`.
+- It runs as the user: no root helper and no kernel extension. The one system setting it changes is the PAC URL, cleared on exit.
+
+## Install
+
+- The menu-bar app, served from GitHub Releases: https://tailfuse.com/download (picks the platform), or https://tailfuse.com/download/app/macos (universal .dmg), /download/app/windows (installer), /download/app/linux (AppImage), /download/app/linux-deb
+- The command-line tool, as an archive: https://tailfuse.com/download/cli/macos, /download/cli/windows, /download/cli/linux-amd64, /download/cli/linux-arm64
+- The app and the command line both run Tailscale's own `tailscaled`, which must be installed on the machine.
+- macOS: `brew install ailio-technologies-inc/tap/tailfuse`
+- Windows: `winget install ailio-technologies-inc.tailfuse`
+- From source: `cargo install --git https://github.com/ailio-technologies-inc/tailfuse tailfuse-cli`
+
+## Quick start
+
+```sh
+tailfuse init                      # starter config
+tailfuse profile login personal    # browser sign-in, once per tailnet
+tailfuse profile login work
+tailfuse up                        # router + system PAC
+```
+
+Config lives at `~/.config/tailfuse/config.yaml`:
+
+```yaml
+profiles:
+  personal:
+    suffixes: [.home-lab.ts.net]
+  work:
+    suffixes: [.work.ts.net, .internal.example]
+    accept_routes: true
+    exit_node: exit-us
+tunnels:
+  - name: prod-db
+    profile: work
+    listen: 127.0.0.1:5432
+    target: db.work.ts.net:5432
+```
+
+## Commands
+
+- `tailfuse up [--no-pac]`: start everything and set the system PAC.
+- `tailfuse down`: clear the system PAC.
+- `tailfuse status`: per-profile state, hostname and Tailscale IPs.
+- `tailfuse test <host>`: show which profile owns a hostname.
+- `tailfuse ssh user@host.work.ts.net`: SSH through the owning profile.
+- `tailfuse run curl http://wiki.work.ts.net`: run any command with the proxy environment.
+- `tailfuse env`: print the proxy environment for your shell.
+- `tailfuse tunnel add prod-db --listen 127.0.0.1:5432 --target db.work.ts.net:5432 --profile work`: pin a local port to a tailnet service.
+- `tailfuse serve-pac`: just the PAC URL, for manual browser configuration.
+- `tailfuse license activate <key>`: activate a license key.
+
+## License keys and price
+
+- Two tailnet profiles are free, forever.
+- More profiles need a license key. The key is by optional donation: the form at https://tailfuse.com/#pricing takes any amount from $0 up, and a $0 key is the same key as a paid one.
+- A key covers updates for a year, and the version you have keeps working after that.
+- Keys are signed and verified offline: no phone-home, no account, no telemetry.
+
+## Links
+
+- [Website](https://tailfuse.com/)
+- [Source code and README](https://github.com/ailio-technologies-inc/tailfuse)
+- [Releases](https://github.com/ailio-technologies-inc/tailfuse/releases/latest)
+- [MIT license](https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE)
+- [Privacy](https://tailfuse.com/privacy)
