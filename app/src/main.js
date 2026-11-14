@@ -118,9 +118,6 @@ function render(s) {
   const count = s.profiles.length;
   $("#profile-hint").textContent = count === 0 ? "" : count <= 2 ? `${count} of 2 free tailnets used` : `${count} tailnets, licensed`;
   $("#profiles-empty").hidden = count > 0;
-  // Import is the main step only while there is nothing here yet.
-  $("#import").classList.toggle("btn--primary", count === 0);
-  $("#import").classList.toggle("btn--secondary", count > 0);
   $("#profiles").replaceChildren(...s.profiles.map((p) => profileEntry(p, s.up)));
   $("#tunnels").replaceChildren(...s.tunnels.map(tunnelEntry));
 
@@ -199,14 +196,22 @@ if (!invoke) {
     }
   });
 
-  $("#import").addEventListener("click", async () => {
-    const msg = $("#import-msg");
-    msg.textContent = "Looking for your Tailscale app.";
+  // Add a tailnet the way the Tailscale app does: the browser sign-in tells Tailfuse which
+  // tailnet it is, so nothing has to be typed. The call returns once the sign-in is finished.
+  $("#signin-new").addEventListener("click", async () => {
+    const button = $("#signin-new");
+    const msg = $("#signin-msg");
+    button.disabled = true;
+    button.textContent = "Waiting for your browser";
+    msg.textContent = "Finish signing in in the browser page that just opened. This window updates when you're done.";
     try {
-      msg.textContent = sentence(await invoke("import_from_tailscale"));
+      const name = await invoke("sign_in_new_tailnet");
+      msg.textContent = `${name} is signed in and coming online.`;
     } catch (err) {
       msg.textContent = sentence(err);
     }
+    button.disabled = false;
+    button.textContent = "Sign in with Tailscale";
     refresh();
   });
 

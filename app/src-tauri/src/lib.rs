@@ -57,7 +57,7 @@ struct StateView {
 }
 
 #[tauri::command]
-async fn get_state(state: State<'_, AppState>) -> Result<StateView, String> {
+async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
     let cfg = state.cfg.lock().await.clone();
     let running = state.running.lock().await;
     let (up, profiles) = match running.as_ref() {
@@ -144,12 +144,12 @@ async fn stop_inner(state: &AppState) {
 }
 
 #[tauri::command]
-async fn start(state: State<'_, AppState>) -> Result<(), String> {
+async fn start(state: State<'_, SharedState>) -> Result<(), String> {
     start_inner(&state).await
 }
 
 #[tauri::command]
-async fn stop(state: State<'_, AppState>) -> Result<(), String> {
+async fn stop(state: State<'_, SharedState>) -> Result<(), String> {
     stop_inner(&state).await;
     Ok(())
 }
@@ -228,7 +228,7 @@ fn refresh_tray(app: &AppHandle) {
 
 #[tauri::command]
 async fn login(
-    state: State<'_, AppState>,
+    state: State<'_, SharedState>,
     name: String,
     app: AppHandle,
 ) -> Result<Option<String>, String> {
@@ -251,8 +251,98 @@ async fn login(
     Ok(url)
 }
 
+/// A short profile name for a tailnet: `example.com` gives `example`,
+/// `someone@gmail.com` gives `someone`, else the MagicDNS label; made unique.
+fn name_for_tailnet(cfg: &Config, found: &daemon::SignedIn) -> String {
+    let clean = |text: &str| -> String {
+        text.split(['@', '.'])
+            .next()
+            .unwrap_or("")
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .take(24)
+            .collect()
+    };
+    let mut base = clean(&found.tailnet);
+    if base.is_empty() {
+        base = clean(&found.suffix);
+    }
+    if base.is_empty() {
+        base = "tailnet".into();
+    }
+    let mut name = base.clone();
+    let mut n = 2;
+    while cfg.profiles.contains_key(&name) {
+        name = format!("{base}-{n}");
+        n += 1;
+    }
+    name
+}
+
+/// Add a tailnet the way the Tailscale app does: sign in in the browser, and
+/// the tailnet's own name and address suffix fill themselves in.
 #[tauri::command]
-async fn import_from_tailscale(state: State<'_, AppState>) -> Result<String, String> {
+async fn sign_in_new_tailnet(
+    state: State<'_, SharedState>,
+    app: AppHandle,
+) -> Result<String, String> {
+    {
+        let cfg = state.cfg.lock().await;
+        license::check(cfg.profiles.len() + 1, &cfg.license).map_err(|e| e.to_string())?;
+    }
+    let pending = daemon::new_tailnet_start()
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    if let Some(u) = &pending.url {
+        let _ = app.opener().open_url(u, None::<&str>);
+    }
+    let found = pending.finish().await.map_err(|e| format!("{e:#}"))?;
+
+    // A tailnet that is already listed is signed in where it stands; a new one gets a profile.
+    let name = {
+        let mut cfg = state.cfg.lock().await;
+        let existing = cfg
+            .owner(&format!("host.{}", found.suffix))
+            .map(|(owner, _)| owner.to_string());
+        match existing {
+            Some(owner) => owner,
+            None => {
+                let name = name_for_tailnet(&cfg, &found);
+                cfg.profiles.insert(
+                    name.clone(),
+                    Profile {
+                        suffixes: vec![format!(".{}", found.suffix)],
+                        ..Default::default()
+                    },
+                );
+                let checked = cfg
+                    .validate()
+                    .map_err(|e| e.to_string())
+                    .and_then(|_| {
+                        license::check(cfg.profiles.len(), &cfg.license).map_err(|e| e.to_string())
+                    })
+                    .and_then(|_| cfg.save(&state.cfg_path).map_err(|e| e.to_string()));
+                if let Err(e) = checked {
+                    cfg.profiles.remove(&name);
+                    daemon::discard_signin_state();
+                    return Err(e);
+                }
+                name
+            }
+        }
+    };
+
+    // Hand the finished sign-in to that profile and bring everything (back) up.
+    stop_inner(&state).await;
+    daemon::adopt_signin_state(&name).map_err(|e| format!("{e:#}"))?;
+    start_inner(&state).await?;
+    refresh_tray(&app);
+    Ok(name)
+}
+
+#[tauri::command]
+async fn import_from_tailscale(state: State<'_, SharedState>) -> Result<String, String> {
     let suffix = daemon::detect_official_tailnet_suffix().await.ok_or_else(|| {
         "could not read the official Tailscale client's tailnet — is Tailscale installed, running and logged in?"
             .to_string()
@@ -285,7 +375,7 @@ async fn import_from_tailscale(state: State<'_, AppState>) -> Result<String, Str
 
 #[tauri::command]
 async fn add_profile(
-    state: State<'_, AppState>,
+    state: State<'_, SharedState>,
     name: String,
     suffixes: Vec<String>,
 ) -> Result<(), String> {
@@ -307,7 +397,7 @@ async fn add_profile(
 }
 
 #[tauri::command]
-async fn remove_profile(state: State<'_, AppState>, name: String) -> Result<(), String> {
+async fn remove_profile(state: State<'_, SharedState>, name: String) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
     if cfg.profiles.remove(&name).is_none() {
         return Err(format!("no such profile {name:?}"));
@@ -318,7 +408,7 @@ async fn remove_profile(state: State<'_, AppState>, name: String) -> Result<(), 
 
 #[tauri::command]
 async fn add_tunnel(
-    state: State<'_, AppState>,
+    state: State<'_, SharedState>,
     name: String,
     listen: String,
     target: String,
@@ -337,7 +427,7 @@ async fn add_tunnel(
 }
 
 #[tauri::command]
-async fn remove_tunnel(state: State<'_, AppState>, name: String) -> Result<(), String> {
+async fn remove_tunnel(state: State<'_, SharedState>, name: String) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
     let before = cfg.tunnels.len();
     cfg.tunnels.retain(|t| t.name != name);
@@ -349,7 +439,7 @@ async fn remove_tunnel(state: State<'_, AppState>, name: String) -> Result<(), S
 }
 
 #[tauri::command]
-async fn activate_license(state: State<'_, AppState>, key: String) -> Result<String, String> {
+async fn activate_license(state: State<'_, SharedState>, key: String) -> Result<String, String> {
     let mut cfg = state.cfg.lock().await;
     let lic = license::verify(&key).map_err(|e| format!("activation failed: {e:#}"))?;
     license::check(cfg.profiles.len(), &key).map_err(|e| e.to_string())?;
@@ -362,7 +452,7 @@ async fn activate_license(state: State<'_, AppState>, key: String) -> Result<Str
 }
 
 #[tauri::command]
-async fn test_host(state: State<'_, AppState>, host: String) -> Result<String, String> {
+async fn test_host(state: State<'_, SharedState>, host: String) -> Result<String, String> {
     let cfg = state.cfg.lock().await.clone();
     Ok(match cfg.owner(&host) {
         Some((name, _)) => format!("{host} → profile {name:?}"),
@@ -499,6 +589,8 @@ fn build_tray(app: &AppHandle) -> Result<()> {
 pub fn run() {
     let cfg_path = config::default_config_path();
     let cfg = config::load(&cfg_path).unwrap_or_default();
+    // Nothing set up yet: open the window so a first launch shows where to begin.
+    let first_run = cfg.profiles.is_empty();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -511,16 +603,21 @@ pub fn run() {
             cfg: Mutex::new(cfg),
             running: Mutex::new(None),
         }))
-        .setup(|app| {
+        .setup(move |app| {
             // Menu-bar behavior on macOS: no Dock icon, window hidden at
             // launch — the tray is the app. Other platforms keep a window.
+            // A first launch with no tailnets keeps the window up instead.
             #[cfg(target_os = "macos")]
             {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.hide();
+                if !first_run {
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.hide();
+                    }
                 }
             }
+            #[cfg(not(target_os = "macos"))]
+            let _ = first_run;
             // Close hides to the tray instead of killing the daemons.
             if let Some(w) = app.get_webview_window("main") {
                 let win = w.clone();
@@ -549,6 +646,7 @@ pub fn run() {
             login,
             add_profile,
             import_from_tailscale,
+            sign_in_new_tailnet,
             remove_profile,
             add_tunnel,
             remove_tunnel,
@@ -557,6 +655,14 @@ pub fn run() {
             get_autostart,
             set_autostart,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tailfuse");
+        .build(tauri::generate_context!())
+        .expect("error while running tailfuse")
+        .run(|_app, _event| {
+            // Opening the app again (Finder, Spotlight, `open -a`) while it is
+            // already in the menu bar brings its window up.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                show_main_window(_app);
+            }
+        });
 }

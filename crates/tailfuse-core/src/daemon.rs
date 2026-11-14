@@ -148,7 +148,7 @@ impl DaemonSet {
                     socket.as_os_str(),
                     OsStr::new("--socks5-server"),
                     OsStr::new(&format!("127.0.0.1:{socks_port}")),
-                    OsStr::new("--no-logs-no-flush"),
+                    OsStr::new("--no-logs-no-support"),
                 ])
                 .stdin(Stdio::null())
                 .stdout(Stdio::from(log_file))
@@ -293,14 +293,174 @@ pub async fn login_start(cfg: &config::Config, name: &str) -> Result<Option<Stri
         .await?;
         return Ok(None);
     }
-    let out = match tailscale_cli(&socket, &["login", "--accept-dns=false"]).await {
-        Ok(o) => o,
-        Err(_) => tailscale_cli(&socket, &["up", "--accept-dns=false"]).await?,
-    };
-    Ok(out
-        .lines()
-        .find(|l| l.contains("http"))
-        .map(|l| l.trim().to_string()))
+    begin_browser_login(&socket).await
+}
+
+/// What `tailscale status --json` says about a login in progress.
+#[derive(Debug, Deserialize, Default)]
+struct LoginStatus {
+    #[serde(rename = "BackendState")]
+    backend_state: Option<String>,
+    #[serde(rename = "AuthURL")]
+    auth_url: Option<String>,
+    #[serde(rename = "CurrentTailnet")]
+    current: Option<TailnetJson>,
+    #[serde(rename = "MagicDNSSuffix")]
+    magic: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TailnetJson {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "MagicDNSSuffix")]
+    magic: Option<String>,
+}
+
+async fn login_status(socket: &Path) -> Option<LoginStatus> {
+    let text = tailscale_cli(socket, &["status", "--json"]).await.ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Ask the daemon on `socket` for an interactive login and return the page to
+/// open in a browser (`None` when it is already signed in). `tailscale login`
+/// stays in the foreground until the browser step is done, so it is left
+/// running on its own and the link is read from the daemon's status instead.
+async fn begin_browser_login(socket: &Path) -> Result<Option<String>> {
+    let bin = find_tailscale().context("tailscale CLI not found")?;
+    Command::new(bin)
+        .arg("--socket")
+        .arg(socket)
+        .args(["login", "--accept-dns=false"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("running tailscale login")?;
+    for _ in 0..60 {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        if let Some(st) = login_status(socket).await {
+            if st.backend_state.as_deref() == Some("Running") {
+                return Ok(None);
+            }
+            if let Some(url) = st.auth_url.filter(|u| !u.is_empty()) {
+                return Ok(Some(url));
+            }
+        }
+    }
+    bail!("Tailscale did not offer a sign-in page")
+}
+
+/// State slot used while signing in to a tailnet that has no profile yet.
+const SIGNIN_SLOT: &str = "signin-pending";
+
+/// A tailnet being signed in to before it has a profile: its own throwaway
+/// tailscaled, which lets the browser login say which tailnet this is.
+pub struct NewTailnet {
+    child: Child,
+    socket: PathBuf,
+    /// The page to open in a browser.
+    pub url: Option<String>,
+}
+
+/// The tailnet a finished sign-in landed in.
+#[derive(Debug, Clone)]
+pub struct SignedIn {
+    /// MagicDNS suffix without the leading dot, e.g. `tail8e2dc7.ts.net`.
+    pub suffix: String,
+    /// The tailnet's display name, e.g. `example.com`; may be empty.
+    pub tailnet: String,
+}
+
+/// Start signing in to a tailnet that is not configured yet.
+pub async fn new_tailnet_start() -> Result<NewTailnet> {
+    let tailscaled = find_tailscaled().context(
+        "tailscaled not found — install Tailscale (https://tailscale.com/download) or set TAILSCALED_PATH",
+    )?;
+    let state_dir = config::profile_state_dir(SIGNIN_SLOT);
+    let socket = config::profile_socket(SIGNIN_SLOT);
+    let _ = std::fs::remove_dir_all(&state_dir);
+    std::fs::create_dir_all(&state_dir)?;
+    if socket.exists() {
+        let _ = std::fs::remove_file(&socket);
+    }
+    let log_path = config::state_dir().join(format!("{SIGNIN_SLOT}.log"));
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    let err_file = log_file.try_clone()?;
+    let child = Command::new(&tailscaled)
+        .args([
+            "--tun=userspace-networking".as_ref(),
+            OsStr::new("--statedir"),
+            state_dir.as_os_str(),
+            OsStr::new("--socket"),
+            socket.as_os_str(),
+            OsStr::new("--no-logs-no-support"),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log_file))
+        .stderr(Stdio::from(err_file))
+        .kill_on_drop(true)
+        .spawn()
+        .context("starting tailscaled for the sign-in")?;
+    // The socket appears a moment after the daemon starts.
+    for _ in 0..50 {
+        if socket.exists() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    let url = begin_browser_login(&socket).await?;
+    Ok(NewTailnet { child, socket, url })
+}
+
+impl NewTailnet {
+    /// Wait for the browser step (about five minutes at most), report which
+    /// tailnet it was, and stop the throwaway daemon. Its state stays on disk
+    /// for [`adopt_signin_state`].
+    pub async fn finish(mut self) -> Result<SignedIn> {
+        let mut found = None;
+        for _ in 0..150 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if let Some(st) = login_status(&self.socket).await {
+                if st.backend_state.as_deref() == Some("Running") {
+                    let tailnet = st
+                        .current
+                        .as_ref()
+                        .and_then(|t| t.name.clone())
+                        .unwrap_or_default();
+                    let suffix = st.current.and_then(|t| t.magic).or(st.magic);
+                    if let Some(suffix) = suffix.filter(|s| !s.is_empty()) {
+                        found = Some(SignedIn {
+                            suffix: suffix.trim_matches('.').to_lowercase(),
+                            tailnet,
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+        let _ = self.child.start_kill();
+        let _ = self.child.wait().await;
+        let _ = std::fs::remove_file(&self.socket);
+        found.context("the sign-in was not finished in time")
+    }
+}
+
+/// Hand the signed-in state over to the profile called `name`, so that
+/// profile starts already authenticated.
+pub fn adopt_signin_state(name: &str) -> Result<()> {
+    let from = config::profile_state_dir(SIGNIN_SLOT);
+    let to = config::profile_state_dir(name);
+    let _ = std::fs::remove_dir_all(&to);
+    std::fs::rename(&from, &to).with_context(|| format!("saving the sign-in for {name:?}"))
+}
+
+/// Throw away a sign-in that will not be used.
+pub fn discard_signin_state() {
+    let _ = std::fs::remove_dir_all(config::profile_state_dir(SIGNIN_SLOT));
 }
 
 /// Poll until the profile finishes authenticating (or ~8 minutes pass).

@@ -39,13 +39,13 @@
         <ul id="profiles" class="list"></ul>
         <div id="profiles-empty" class="empty" hidden>
           <strong>No tailnets yet</strong>
-          <p>Bring in the tailnet your Tailscale app is signed in to, or add one by hand.</p>
+          <p>Sign in with Tailscale to add your first. Your browser opens, you choose the account, and the tailnet appears here.</p>
         </div>
         <div class="pane-tools">
-          <button id="import" type="button" class="btn btn--primary btn--sm">Import from Tailscale</button>
-          <button id="show-add-profile" type="button" class="btn btn--secondary btn--sm" aria-expanded="false" aria-controls="add-profile">Add a tailnet by hand</button>
+          <button id="signin-new" type="button" class="btn btn--primary btn--sm">Sign in with Tailscale</button>
+          <button id="show-add-profile" type="button" class="btn btn--secondary btn--sm" aria-expanded="false" aria-controls="add-profile">Set one up by hand</button>
         </div>
-        <p class="hint" id="import-msg" role="status"></p>
+        <p class="hint" id="signin-msg" role="status"></p>
         <form id="add-profile" class="form" hidden>
           <label class="field">
             <span>Name</span>
