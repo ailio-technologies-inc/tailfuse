@@ -875,11 +875,28 @@ async fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     }
 }
 
+/// Show a window and reliably focus it. tao's macOS `set_focus` only takes
+/// effect once the window reports visible (its `show` is dispatched), and an
+/// accessory-policy app needs the activate that rides along with it — so a
+/// single `show(); set_focus()` loses the race and the window stays behind.
+/// Show first, then focus once the window is actually on screen.
+fn show_and_focus(w: &tauri::WebviewWindow) {
+    let _ = w.unminimize();
+    let _ = w.show();
+    let w = w.clone();
+    std::thread::spawn(move || {
+        for delay in [60, 160] {
+            std::thread::sleep(std::time::Duration::from_millis(delay));
+            if w.is_visible().unwrap_or(false) {
+                let _ = w.set_focus();
+            }
+        }
+    });
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
+        show_and_focus(&w);
     }
 }
 
@@ -917,7 +934,7 @@ fn toggle_panel(app: &AppHandle) {
         }
     }
     let _ = panel.show();
-    let _ = panel.set_focus();
+    show_and_focus(&panel);
 }
 
 #[tauri::command]
