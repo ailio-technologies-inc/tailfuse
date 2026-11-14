@@ -1,65 +1,95 @@
-// Google Analytics for tailfuse.com, loaded only with the visitor's consent.
-// The measurement id is public by design (Terraform output); the choice is
-// remembered in localStorage. Mirrors dagpeek's site.js, without the server
-// consent endpoint: a self-contained banner,
-// worded and laid out like ailio.ca's (No / Allow).
+// tailfuse.com's measurement, by ailio.ca's consent model (src/worker.js, /data/consent; ailio.ca's
+// apps/ailio/public/consent.js): measure first, ask later. Outside Quebec an unanswered visitor is measured with
+// Google Analytics from the first page and sees the bar; Quebec (Law 25) waits for "Allow"; a "No" stops it and
+// removes Google's cookies. Ad signals are always denied. The one event is a download click (ga4_key_events in
+// Terraform); no address, query string or typed value is sent.
 (function () {
   'use strict';
 
-  var ID = 'G-B598JDM8JW'; // tailfuse_ga4_measurement_id (Terraform output); public by design.
-  var KEY = 'tailfuse-consent';
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return;
 
-  function start() {
+  // A No takes back what an earlier visit stored: Google's cookies, before the page reloads without them.
+  function forget() {
+    document.cookie.split(';').forEach(function (part) {
+      var name = part.split('=')[0].trim();
+      if (!/^_ga/.test(name)) return;
+      ['', '; domain=' + location.hostname, '; domain=.' + location.hostname].forEach(function (domain) {
+        document.cookie = name + '=; Max-Age=0; path=/' + domain;
+      });
+    });
+  }
+
+  function answer(choice) {
+    if (choice === 'denied') forget();
+    return fetch('/data/consent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ choice: choice }),
+      credentials: 'same-origin'
+    }).then(function (r) {
+      if (!r.ok) throw new Error('consent ' + r.status);
+      location.reload();
+    });
+  }
+
+  function loadGoogle(id) {
     window.dataLayer = window.dataLayer || [];
     window.gtag = function () { window.dataLayer.push(arguments); };
     window.gtag('consent', 'default', {
       ad_storage: 'denied',
       ad_user_data: 'denied',
       ad_personalization: 'denied',
-      analytics_storage: 'granted',
+      analytics_storage: 'granted'
     });
     window.gtag('js', new Date());
-    window.gtag('config', ID, { anonymize_ip: true });
+    window.gtag('config', id, { anonymize_ip: true });
     var script = document.createElement('script');
     script.async = true;
-    script.src = 'https://www.googletagmanager.com/gtag/js?id=' + ID;
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id);
     document.head.appendChild(script);
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[href^="/download"]');
+      if (link) window.gtag('event', 'download_click');
+    });
   }
 
-  // Download clicks are the one key event (ga4_key_events in Terraform).
-  document.addEventListener('click', function (event) {
-    var link = event.target.closest && event.target.closest('a[href^="/download"]');
-    if (link && window.gtag) window.gtag('event', 'download_click');
-  });
-
-  var choice = null;
-  try { choice = localStorage.getItem(KEY); } catch (e) { /* private mode: ask each time */ }
-
-  if (choice === 'allow') {
-    start();
-    return;
+  function el(tag, props, children) {
+    var node = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) { node.setAttribute(k, props[k]); });
+    (children || []).forEach(function (c) { node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return node;
   }
-  if (choice === 'decline') return;
 
   // The same bar and words as ailio.ca and the other Ailio sites: No / Allow.
-  var banner = document.createElement('div');
-  banner.className = 'consent';
-  banner.setAttribute('role', 'region');
-  banner.setAttribute('aria-label', 'Measurement');
-  banner.innerHTML =
-    '<p>This website uses cookies to ensure you get the best experience on our website. <a href="/privacy">Privacy</a></p>' +
-    '<div class="choices">' +
-    '<button type="button" data-consent="decline">No</button>' +
-    '<button type="button" class="primary" data-consent="allow">Allow</button>' +
-    '</div>';
-  var show = function () { document.body.appendChild(banner); };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+  function showBanner() {
+    var bar = el('div', { class: 'consent', role: 'region', 'aria-label': 'Measurement' }, [
+      el('p', {}, ['This website uses cookies to ensure you get the best experience on our website. ', el('a', { href: '/privacy' }, ['Privacy'])]),
+      el('div', { class: 'choices' }, [
+        el('button', { type: 'button', 'data-choice': 'denied' }, ['No']),
+        el('button', { type: 'button', class: 'primary', 'data-choice': 'granted' }, ['Allow'])
+      ])
+    ]);
+    bar.addEventListener('click', function (event) {
+      var choice = event.target.getAttribute && event.target.getAttribute('data-choice');
+      if (choice) answer(choice).catch(function () { bar.remove(); });
+    });
+    document.body.appendChild(bar);
+  }
 
-  banner.addEventListener('click', function (event) {
-    var pick = event.target.getAttribute && event.target.getAttribute('data-consent');
-    if (!pick) return;
-    try { localStorage.setItem(KEY, pick); } catch (e) { /* remember nothing */ }
-    banner.remove();
-    if (pick === 'allow') start();
-  });
+  fetch('/data/consent', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (state) {
+      // No answer from our own route: measure nothing and ask nothing.
+      if (!state) return;
+      // An answer given under the old bar (kept in this browser) carries over once, without asking again.
+      var old = null;
+      try { old = localStorage.getItem('tailfuse-consent'); localStorage.removeItem('tailfuse-consent'); } catch (e) {}
+      if (state.banner && (old === 'allow' || old === 'decline')) { answer(old === 'allow' ? 'granted' : 'denied'); return; }
+      if (state.analytics && state.gaId) loadGoogle(state.gaId);
+      if (state.banner) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', showBanner);
+        else showBanner();
+      }
+    })
+    .catch(function () {});
 })();

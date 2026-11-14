@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy: Tailfuse</title>
-<meta name="description" content="What Tailfuse and tailfuse.com collect: the app sends nothing home, the site has no analytics or cookies, and the license form writes your email into your key.">
+<meta name="description" content="What Tailfuse and tailfuse.com collect: the app sends nothing home, the site measures visits with Google Analytics (you can say No), and the license form writes your email into your key.">
 <link rel="canonical" href="https://tailfuse.com/privacy">
 <meta name="theme-color" content="#18191b">
 <meta name="color-scheme" content="dark">
@@ -12,7 +12,7 @@
 <meta property="og:site_name" content="Tailfuse">
 <meta property="og:url" content="https://tailfuse.com/privacy">
 <meta property="og:title" content="Privacy: Tailfuse">
-<meta property="og:description" content="The app sends nothing home, the site has no analytics or cookies, and the license form writes your email into your key.">
+<meta property="og:description" content="The app sends nothing home, the site measures visits with Google Analytics (you can say No), and the license form writes your email into your key.">
 <meta property="og:image" content="https://tailfuse.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -40,7 +40,8 @@
 <p>Tailfuse sends nothing to us. It has no account, no telemetry and no phone-home. License keys are checked on your machine against a public key built into the app. The one exception is a shared license code: when you enter one, the app sends just that code to tailfuse.com once, to exchange it for a key. Your tailnet traffic goes through the tailscaled binary, which is Tailscale's software under Tailscale's terms.</p>
 
 <h2>This website</h2>
-<p>The site sets no cookies and runs no analytics or tracking scripts. It is served by Cloudflare, which handles each request and its IP address to deliver the page. The fonts load from Google Fonts, so Google receives that request. Downloads come from GitHub Releases, so GitHub receives that one.</p>
+<p>The site measures how it is used with Google Analytics: which pages are seen and when a download link is clicked. Google sets its own cookies for that. Outside Quebec this starts on your first visit and a bar asks whether you allow it; inside Quebec nothing is measured until you choose Allow. Choosing No stops the measurement and removes Google's cookies, and the site remembers your choice in one cookie of its own (<code>tailfuse_consent</code>) for a year. Advertising signals are always off. Nothing you type is sent.</p>
+<p>The site is served by Cloudflare, which handles each request and its IP address to deliver the page. The fonts load from Google Fonts, so Google receives that request. Downloads come from GitHub Releases, so GitHub receives that one.</p>
 
 <h2>The license form</h2>
 <p>The email address you enter is written into your license key, which is how a key is tied to its owner. The site keeps no list of emails or keys.</p>

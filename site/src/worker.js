@@ -334,6 +334,56 @@ async function download(request, url, ctx) {
   return Response.redirect(asset.browser_download_url, 302);
 }
 
+// Measurement consent, ailio.ca's model (ailio.ca repo, apps/ailio/src/consent.ts), for Google Analytics only:
+// - outside Quebec it is measure first, ask later: an unanswered visitor is measured from the first page;
+// - Quebec (Law 25) waits for "Allow";
+// - a "No" turns measurement off; the bar shows only to a visitor who has never answered.
+// GET /data/consent answers that for this visitor; POST {choice} records the answer in an HttpOnly cookie.
+const CONSENT_COOKIE = 'tailfuse_consent';
+const CONSENT_TTL_SECONDS = 365 * 24 * 60 * 60;
+// tailfuse_ga4_measurement_id (Terraform output); public by design. TAILFUSE_GA4_ID overrides it.
+const GA4_ID = 'G-B598JDM8JW';
+const GA_ID_SHAPE = /^G-[A-Z0-9]{4,}$/;
+const NO_STORE = { 'cache-control': 'private, no-store', 'content-type': 'application/json; charset=utf-8' };
+
+function consentFromCookie(header) {
+  for (const part of (header ?? '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0 || part.slice(0, eq).trim() !== CONSENT_COOKIE) continue;
+    const value = part.slice(eq + 1).trim();
+    return value === 'granted' || value === 'denied' ? value : 'pending';
+  }
+  return 'pending';
+}
+
+// An unresolved region reads as not Quebec.
+const requiresOptIn = (country, region) => country?.toUpperCase() === 'CA' && region?.toUpperCase() === 'QC';
+
+export function measurement(consent, country, region) {
+  const analytics = consent === 'granted' || (consent === 'pending' && !requiresOptIn(country, region));
+  return { analytics, banner: consent === 'pending' };
+}
+
+async function consentRoute(request, env) {
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const choice = body?.choice;
+    if (choice !== 'granted' && choice !== 'denied') {
+      return new Response('{"error":"choice must be granted or denied"}', { status: 400, headers: NO_STORE });
+    }
+    return new Response('{"ok":true}', {
+      headers: { ...NO_STORE, 'set-cookie': `${CONSENT_COOKIE}=${choice}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${CONSENT_TTL_SECONDS}` },
+    });
+  }
+  if (request.method !== 'GET') return new Response(null, { status: 405, headers: { allow: 'GET, POST' } });
+  const consent = consentFromCookie(request.headers.get('cookie'));
+  const id = (env.TAILFUSE_GA4_ID ?? GA4_ID).trim();
+  return new Response(
+    JSON.stringify({ consent, ...measurement(consent, request.cf?.country ?? null, request.cf?.regionCode ?? null), gaId: GA_ID_SHAPE.test(id) ? id : '' }),
+    { headers: NO_STORE },
+  );
+}
+
 // Security headers for every response the site sends.
 const SECURITY_HEADERS = {
   'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
@@ -344,11 +394,12 @@ const SECURITY_HEADERS = {
   'cross-origin-opener-policy': 'same-origin',
   'content-security-policy': [
     "default-src 'self'",
-    "script-src 'self'",
+    // Google Analytics (consent.js, /data/consent): its tag and where it sends hits.
+    "script-src 'self' https://www.googletagmanager.com",
     "style-src 'self' https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com",
-    "img-src 'self' data:",
-    "connect-src 'self'",
+    "img-src 'self' data: https://*.google-analytics.com https://www.googletagmanager.com",
+    "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com",
     "form-action 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
@@ -378,6 +429,7 @@ async function handle(request, env, ctx) {
     }
 
     if (url.pathname === '/download' || url.pathname.startsWith('/download/')) return download(request, url, ctx);
+    if (url.pathname === '/data/consent') return consentRoute(request, env);
 
     if (url.pathname.startsWith('/api/')) {
       try {

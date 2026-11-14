@@ -227,15 +227,18 @@ Ask me before any step that needs my password or changes a system setting. Never
 </div>
 </section>
 
-<!-- The light band: the router's one address set as large as the page allows. Its characters fly in on scroll. -->
+<!-- The light band: the address Tailfuse listens on, set as large as the page allows, and the three ways apps use it. Its characters fly in on scroll. -->
 <section class="section band" id="port">
 <div class="wrap band__col">
-<h2>One local port in front of every tailnet</h2>
+<div class="band__head">
+<h2>Every tailnet, behind one address on your computer</h2>
+<p class="lead">Tailfuse listens here. Your apps send tailnet traffic to this address, and Tailfuse passes each request to the tailnet that owns the hostname.</p>
+</div>
 <div class="addr" role="img" aria-label="127.0.0.1:43100"><span>1</span><span>2</span><span>7</span><span>.</span><span>0</span><span>.</span><span>0</span><span>.</span><span>1</span><span class="addr__port">:</span><span class="addr__port">4</span><span class="addr__port">3</span><span class="addr__port">1</span><span class="addr__port">0</span><span class="addr__port">0</span></div>
 <div class="facts">
-<div class="fact"><h3>SOCKS5</h3><p>The proxy that tailfuse run hands to a command, with DNS resolved on the tailnet side.</p></div>
-<div class="fact"><h3>HTTP CONNECT</h3><p>The same port answers tools that only take an HTTP proxy.</p></div>
-<div class="fact"><h3>/tailfuse.pac</h3><p>Browsers read the PAC file, send owned hostnames to the router and connect direct for the rest.</p></div>
+<div class="fact"><h3>Browsers</h3><p>Nothing to set up. Your system’s automatic proxy setting sends tailnet addresses here, and every other site loads as usual.</p></div>
+<div class="fact"><h3>The terminal</h3><p><code>tailfuse run</code> starts any command through it, so <code>curl</code>, <code>git</code> and scripts reach tailnet names. <code>tailfuse ssh</code> does the same for SSH.</p></div>
+<div class="fact"><h3>Any other app</h3><p>Give an app that takes a proxy this address, as SOCKS5 or HTTP. For one that can’t, the app makes a local port that leads to a single service.</p></div>
 </div>
 </div>
 </section>

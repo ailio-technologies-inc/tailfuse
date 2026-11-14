@@ -157,13 +157,16 @@ h1 { margin-top: 16px; max-width: 14em; font-size: clamp(40px, 5vw, 72px); line-
 .band { min-height: max(720px, 100svh); display: flex; background: #eff0f1; color: #18191b; overflow-x: clip; }
 .band :focus-visible { outline-color: #18191b; }
 .band__col { display: flex; flex-direction: column; justify-content: space-between; gap: 56px; }
-.band h2 { max-width: 16ch; }
+.band h2 { max-width: 18ch; }
+.band__head { display: grid; gap: 16px; }
+.band .lead { max-width: 52ch; color: #3a3b3d; }
 .addr { font-family: var(--mono); font-weight: 500; font-size: clamp(30px, 9.1vw, 131px); line-height: 1; letter-spacing: -0.02em; white-space: nowrap; }
 .addr span { display: inline-block; will-change: transform, opacity; }
 .addr__port { color: #c8340c; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 32px; }
 .fact { border-top: 1px solid #18191b; padding-top: 16px; display: flex; flex-direction: column; gap: 6px; }
-.fact h3 { font-family: var(--mono); font-size: 18px; line-height: 1.4; font-weight: 500; }
+.fact h3 { font-size: 18px; line-height: 1.4; font-weight: 500; }
+.fact code { font-family: var(--mono); font-size: .92em; }
 .fact p { color: #3a3b3d; }
 
 /* isolation */
