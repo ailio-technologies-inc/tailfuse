@@ -35,7 +35,8 @@
         "skipTaskbar": true,
         "focus": false,
         "visible": false,
-        "shadow": true
+        "shadow": false,
+        "title": "Tailfuse"
       }
     ],
     "security": {

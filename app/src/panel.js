@@ -118,3 +118,19 @@ document.addEventListener("keydown", (e) => {
 
 refresh();
 setInterval(refresh, 2000);
+
+// Fit the window to the panel, so no empty strip hangs below it (fit_panel in lib.rs).
+// scrollHeight is the panel's natural height even while max-height clamps it.
+let lastFit = 0;
+function fitWindow() {
+  const el = document.querySelector(".panel");
+  if (!invoke || !el) return;
+  const h = Math.ceil(el.scrollHeight);
+  if (h && h !== lastFit) {
+    lastFit = h;
+    invoke("fit_panel", { height: h }).catch(() => {});
+  }
+}
+if (window.ResizeObserver) new ResizeObserver(fitWindow).observe(document.querySelector(".panel"));
+setInterval(fitWindow, 1000);
+fitWindow();

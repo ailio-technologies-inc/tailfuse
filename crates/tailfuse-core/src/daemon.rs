@@ -113,6 +113,9 @@ pub fn find_tailscale() -> Option<PathBuf> {
 
 struct RunningProfile {
     child: Child,
+    /// Stops `child` if Tailfuse dies without cleaning up (see `watchdog`);
+    /// dropped, and so ended, with the profile on a normal stop.
+    _watchdog: Option<Child>,
     socks_port: u16,
     socket: PathBuf,
 }
@@ -144,6 +147,11 @@ impl DaemonSet {
             let state_dir = config::profile_state_dir(name);
             let socket = config::profile_socket(name);
             config::ensure_private_dir(&state_dir)?;
+            // A tailscaled left over from a Tailfuse that was killed (not
+            // quit) still holds this tailnet's state; a second one would then
+            // fail, and the first listens on a socket file that is about to be
+            // replaced, so nothing could reach either. Stop it first.
+            stop_orphans(&socket).await;
             if socket.exists() {
                 let _ = std::fs::remove_file(&socket);
             }
@@ -174,10 +182,13 @@ impl DaemonSet {
                 .spawn()
                 .with_context(|| format!("starting tailscaled for profile {name:?}"))?;
 
+            kill_with_tailfuse(&child);
+            let _watchdog = child.id().and_then(watchdog);
             set.inner.lock().await.insert(
                 name.clone(),
                 RunningProfile {
                     child,
+                    _watchdog,
                     socks_port,
                     socket: socket.clone(),
                 },
@@ -270,6 +281,132 @@ impl DaemonSet {
         }
         map.clear();
     }
+}
+
+/// A small `sh` that outlives Tailfuse if Tailfuse is killed: it polls once a
+/// second, and when Tailfuse's process is gone it stops `child` (a SIGKILL'd
+/// parent cannot clean up, and macOS has no parent-death signal). It checks the
+/// pid still runs tailscaled before stopping it, and exits on its own once the
+/// daemon is gone. On a normal stop Tailfuse ends it (kill_on_drop). Unix only;
+/// on Windows, `kill_with_tailfuse` does this job.
+fn watchdog(child: u32) -> Option<Child> {
+    #[cfg(unix)]
+    {
+        const SCRIPT: &str = r#"p=$1; c=$2
+while kill -0 "$p" 2>/dev/null && kill -0 "$c" 2>/dev/null; do sleep 1; done
+if ! kill -0 "$p" 2>/dev/null; then
+  ps -p "$c" -o command= 2>/dev/null | grep -q tailscaled && kill "$c" 2>/dev/null
+fi"#;
+        Command::new("/bin/sh")
+            .args(["-c", SCRIPT, "tailfuse-watchdog"])
+            .arg(std::process::id().to_string())
+            .arg(child.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child;
+        None
+    }
+}
+
+/// Windows: put `child` in a job object that ends every process in it when
+/// Tailfuse's last handle to the job closes, which the OS does when Tailfuse
+/// exits for any reason, a kill included. Elsewhere this does nothing (Unix
+/// uses `watchdog`).
+fn kill_with_tailfuse(child: &Child) {
+    #[cfg(windows)]
+    {
+        use std::sync::OnceLock;
+        use windows_sys::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+        // One job for the whole session, created on first use and never
+        // closed by us: the OS closes it, and so ends the daemons, when
+        // Tailfuse exits.
+        static JOB: OnceLock<usize> = OnceLock::new();
+        let job = *JOB.get_or_init(|| unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                return 0;
+            }
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            job as usize
+        });
+        if job == 0 {
+            return;
+        }
+        if let Some(handle) = child.raw_handle() {
+            unsafe {
+                AssignProcessToJobObject(job as _, handle as _);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = child;
+}
+
+/// Stop any `tailscaled` still serving `socket` (one per tailnet, so a match is
+/// always a leftover of ours). Unix only: Windows ends a job's children with it.
+async fn stop_orphans(socket: &Path) {
+    #[cfg(unix)]
+    {
+        let Ok(out) = Command::new("ps").args(["-axo", "pid=,command="]).output().await else {
+            return;
+        };
+        let needle = format!("--socket {}", socket.display());
+        let pids: Vec<i32> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| l.contains("tailscaled") && orphan_matches(l, &needle))
+            .filter_map(|l| l.split_whitespace().next()?.parse().ok())
+            .filter(|&pid| pid != std::process::id() as i32)
+            .collect();
+        if pids.is_empty() {
+            return;
+        }
+        tracing::warn!("stopping leftover tailscaled for {}: {pids:?}", socket.display());
+        for pid in &pids {
+            let _ = Command::new("kill").arg(pid.to_string()).status().await;
+        }
+        // Give them a moment to release the state directory.
+        for _ in 0..20 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            let alive = Command::new("kill")
+                .args(["-0", &pids[0].to_string()])
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !alive {
+                break;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = socket;
+}
+
+/// True when a `ps` command line runs with exactly this `--socket` value (the
+/// path is followed by a space or ends the line, so `a.sock` never matches
+/// `a.sock2`).
+fn orphan_matches(line: &str, needle: &str) -> bool {
+    line.match_indices(needle).any(|(i, _)| {
+        matches!(line[i + needle.len()..].chars().next(), None | Some(' '))
+    })
 }
 
 /// Run `tailscale --socket <sock> <args>`, returning stdout on success.
@@ -709,4 +846,18 @@ async fn apply_profile_prefs(name: &str, prof: &config::Profile, socket: &Path) 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod orphan_tests {
+    use super::orphan_matches;
+
+    #[test]
+    fn matches_only_the_exact_socket() {
+        let line = "66801 /opt/homebrew/bin/tailscaled --tun=userspace-networking --statedir /x/profiles/ailio --socket /x/ailio.sock --socks5-server 127.0.0.1:43101";
+        assert!(orphan_matches(line, "--socket /x/ailio.sock"));
+        assert!(!orphan_matches(line, "--socket /x/ail"));
+        assert!(!orphan_matches(line, "--socket /x/change.sock"));
+        assert!(orphan_matches("1 tailscaled --socket /x/a.sock", "--socket /x/a.sock"));
+    }
 }

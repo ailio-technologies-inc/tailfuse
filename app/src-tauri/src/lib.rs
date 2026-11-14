@@ -947,27 +947,42 @@ fn toggle_panel(app: &AppHandle) {
     }
     // Anchor the panel's top center under the tray icon (macOS; elsewhere the
     // window opens wherever the compositor puts it).
+    // The tray reports its rect in physical pixels; the panel is placed in
+    // logical points. Treating one as the other doubled the position on a
+    // Retina display and put the panel off the right edge of the screen.
     #[cfg(target_os = "macos")]
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if let Ok(Some(rect)) = tray.rect() {
-            if let Ok(size) = panel.outer_size() {
-                let (tx, ty) = match rect.position {
-                    tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
-                    tauri::Position::Logical(l) => (l.x, l.y),
-                };
-                let (tw, th) = match rect.size {
-                    tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
-                    tauri::Size::Logical(s) => (s.width, s.height),
-                };
-                let x = (tx + tw / 2.0 - size.width as f64 / 2.0).max(8.0);
-                let y = ty + th + 2.0;
-                let _ =
-                    panel.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
-            }
+            let scale = panel
+                .current_monitor()
+                .ok()
+                .flatten()
+                .map(|m| m.scale_factor())
+                .unwrap_or_else(|| panel.scale_factor().unwrap_or(1.0));
+            let pos: tauri::LogicalPosition<f64> = rect.position.to_logical(scale);
+            let tray_size: tauri::LogicalSize<f64> = rect.size.to_logical(scale);
+            let width = panel
+                .outer_size()
+                .map(|s| s.to_logical::<f64>(scale).width)
+                .unwrap_or(340.0);
+            let x = (pos.x + tray_size.width / 2.0 - width / 2.0).max(8.0);
+            let y = pos.y + tray_size.height + 2.0;
+            let _ = panel.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
         }
     }
     let _ = panel.show();
     show_and_focus(&panel);
+}
+
+/// The panel reports its content height after each render; the window takes
+/// that height (plus the panel's 6px margin all round), so no empty, clickable
+/// strip hangs below it.
+#[tauri::command]
+fn fit_panel(app: AppHandle, height: f64) {
+    if let Some(panel) = app.get_webview_window("panel") {
+        let h = (height + 12.0).clamp(120.0, 640.0);
+        let _ = panel.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 340.0, height: h }));
+    }
 }
 
 #[tauri::command]
@@ -1205,6 +1220,7 @@ pub fn run() {
             get_autostart,
             set_autostart,
             open_main_window,
+            fit_panel,
             quit_app,
         ])
         .build(tauri::generate_context!())
