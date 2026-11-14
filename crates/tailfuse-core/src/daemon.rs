@@ -77,9 +77,6 @@ pub fn find_tailscaled() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TAILSCALED_PATH") {
         return Some(PathBuf::from(p));
     }
-    if let Some(cand) = which_in_path("tailscaled") {
-        return Some(cand);
-    }
     for cand in [
         "/opt/homebrew/bin/tailscaled",
         "/usr/local/bin/tailscaled",
@@ -92,15 +89,13 @@ pub fn find_tailscaled() -> Option<PathBuf> {
             return Some(p.to_path_buf());
         }
     }
-    None
+    // PATH last: a program earlier on PATH must not stand in for an installed one.
+    which_in_path("tailscaled")
 }
 
 pub fn find_tailscale() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TAILSCALE_PATH") {
         return Some(PathBuf::from(p));
-    }
-    if let Some(cand) = which_in_path("tailscale") {
-        return Some(cand);
     }
     for cand in [
         "/opt/homebrew/bin/tailscale",
@@ -113,7 +108,7 @@ pub fn find_tailscale() -> Option<PathBuf> {
             return Some(p.to_path_buf());
         }
     }
-    None
+    which_in_path("tailscale")
 }
 
 struct RunningProfile {

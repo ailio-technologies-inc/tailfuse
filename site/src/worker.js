@@ -314,8 +314,42 @@ async function download(request, url, ctx) {
   return new Response(upstream.body, { status: 200, headers });
 }
 
+// Security headers for every response the site sends.
+const SECURITY_HEADERS = {
+  'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+  'cross-origin-opener-policy': 'same-origin',
+  'content-security-policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' https://fonts.googleapis.com",
+    "font-src https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    'upgrade-insecure-requests',
+  ].join('; '),
+};
+
+function secured(response) {
+  const r = new Response(response.body, response);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!r.headers.has(k)) r.headers.set(k, v);
+  return r;
+}
+
 export default {
   async fetch(request, env, ctx) {
+    return secured(await handle(request, env, ctx));
+  },
+};
+
+async function handle(request, env, ctx) {
+  {
     const url = new URL(request.url);
 
     if (url.hostname === 'www.tailfuse.com') {
@@ -341,5 +375,6 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
-  },
-};
+  }
+}
+

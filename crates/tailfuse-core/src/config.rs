@@ -174,7 +174,7 @@ pub fn profile_socks_port(index: usize) -> u16 {
 pub fn load(path: &std::path::Path) -> Result<Config> {
     match std::fs::read_to_string(path) {
         Ok(text) => {
-            let mut cfg: Config = serde_yml::from_str(&text)
+            let mut cfg: Config = serde_saphyr::from_str(&text)
                 .with_context(|| format!("parsing {}", path.display()))?;
             if cfg.router.listen.is_empty() {
                 cfg.router.listen = default_listen();
@@ -196,7 +196,7 @@ impl Config {
         // Secrets go to the OS credential store; the file keeps a marker.
         let mut on_disk = self.clone();
         secrets::stash(&mut on_disk);
-        let text = serde_yml::to_string(&on_disk)?;
+        let text = serde_saphyr::to_string(&on_disk)?;
         let tmp = path.with_extension("yaml.tmp");
         let mut opts = std::fs::OpenOptions::new();
         opts.write(true).create(true).truncate(true);
@@ -224,6 +224,25 @@ impl Config {
     /// suffix belongs to exactly one profile; overlaps are rejected so a name
     /// on one tailnet can never fall back to another.
     pub fn validate(&self) -> Result<()> {
+        // The router carries traffic into every tailnet with no password: it
+        // must only ever be reachable from this machine.
+        let host = self
+            .router
+            .listen
+            .rsplit_once(':')
+            .map(|(h, _)| h.trim_matches(['[', ']']))
+            .unwrap_or_default();
+        let loopback = host == "localhost"
+            || host
+                .parse::<std::net::IpAddr>()
+                .map(|ip| ip.is_loopback())
+                .unwrap_or(false);
+        if !loopback {
+            bail!(
+                "router.listen {:?} is not a loopback address; Tailfuse only listens on this machine (127.0.0.1)",
+                self.router.listen
+            );
+        }
         if self.profiles.is_empty() {
             bail!("no profiles defined: add one with `tailfuse profile add <name> --suffix .example.ts.net`");
         }
@@ -343,8 +362,8 @@ mod tests {
     #[test]
     fn roundtrip_yaml() {
         let c = cfg();
-        let text = serde_yml::to_string(&c).unwrap();
-        let back: Config = serde_yml::from_str(&text).unwrap();
+        let text = serde_saphyr::to_string(&c).unwrap();
+        let back: Config = serde_saphyr::from_str(&text).unwrap();
         assert_eq!(back.profiles.len(), 2);
     }
 }
