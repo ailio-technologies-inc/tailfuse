@@ -1,4 +1,4 @@
-// tailfuse.com: the routing tester, the app window's power switch and the two type moments.
+// tailfuse.com: the routing tester and the two type moments.
 (function () {
   'use strict';
 
@@ -58,21 +58,6 @@
     route();
   }
 
-  // The power switch in the app window.
-  var win = document.getElementById('app-window');
-  var power = document.getElementById('power');
-  var powerLabel = document.getElementById('power-label');
-  if (win && power && powerLabel) {
-    power.addEventListener('click', function () {
-      var running = win.getAttribute('data-running') !== 'true';
-      win.setAttribute('data-running', String(running));
-      power.setAttribute('aria-checked', String(running));
-      powerLabel.textContent = running ? 'Running' : 'Stopped';
-      Array.prototype.forEach.call(win.querySelectorAll('.card__pill'), function (p) {
-        p.textContent = running ? 'online' : 'stopped';
-      });
-    });
-  }
 
   // The license form. $0 returns a key at once; any other amount goes through Stripe Checkout first.
   var form = document.getElementById('donate');

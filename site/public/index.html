@@ -120,7 +120,7 @@
 
 <main id="main">
 
-<!-- Hero: centred headline over the app's own window, rising out of a lit frame. The power switch works. -->
+<!-- Hero: centred headline over real screenshots of the app window and menu-bar panel, rising out of a lit frame. -->
 <section class="hero" id="top">
 <header class="nav wrap">
 <a class="brand" href="#top" aria-label="Tailfuse, home">
@@ -161,45 +161,9 @@ Ask me before any step that needs my password or changes a system setting. Never
 </div>
 
 <div class="frame wrap">
-<div class="win" id="app-window" data-running="true">
-<div class="win__bar">
-<div class="win__id">
-<div class="win__mark">
-<svg class="brand-mark" viewBox="120 146 272 220" width="26" height="21" aria-hidden="true"><circle cx="150" cy="176" r="27" fill="#eff0f1"/><circle cx="150" cy="256" r="27" fill="#eff0f1"/><circle cx="150" cy="336" r="27" fill="#eff0f1"/><circle cx="214" cy="176" r="27" fill="#eff0f1"/><circle cx="214" cy="336" r="27" fill="#eff0f1"/><circle cx="298" cy="176" r="27" fill="#ff4a1f"/><circle cx="362" cy="176" r="27" fill="#ff4a1f"/><circle cx="298" cy="336" r="27" fill="#ff4a1f"/><circle cx="362" cy="256" r="27" fill="#ff4a1f"/><circle cx="362" cy="336" r="27" fill="#ff4a1f"/><rect x="191" y="229" width="130" height="54" rx="27" fill="#ff4a1f"/></svg>
-</div>
-<div class="win__name">
-<span class="win__title">Tailfuse</span>
-<span class="win__sub">unlicensed (2/2 free profiles)</span>
-</div>
-</div>
-<div class="win__power">
-<button class="switch" id="power" type="button" role="switch" aria-checked="true" aria-label="Start or stop tailfuse"><span class="switch__track"></span><span class="switch__knob"></span></button>
-<span class="win__state" id="power-label">Running</span>
-</div>
-</div>
-
-<div class="win__body">
-<div class="win__group">
-<div class="win__head"><span class="win__label">Tailnets</span><span class="win__sub">2/2 free profiles</span></div>
-<div class="card">
-<span class="card__dot"></span>
-<div class="card__text"><strong>personal</strong><span class="card__mono">.home-lab.ts.net</span><span class="win__sub">studio-mac · 100.101.14.9</span></div>
-<span class="card__pill">online</span>
-</div>
-<div class="card">
-<span class="card__dot"></span>
-<div class="card__text"><strong>work</strong><span class="card__mono">.work.ts.net  .internal.example</span><span class="win__sub">studio-mac · 100.72.203.41</span></div>
-<span class="card__pill">online</span>
-</div>
-</div>
-<div class="win__group">
-<span class="win__label">Tunnels</span>
-<div class="card">
-<span class="card__dot card__dot--blue"></span>
-<div class="card__text"><strong>prod-db</strong><span class="card__mono">127.0.0.1:5432 → db.work.ts.net:5432</span><span class="win__sub">via work</span></div>
-</div>
-</div>
-</div>
+<div class="shots">
+<img class="shots__app" src="/shots/app.png" width="848" height="956" alt="The Tailfuse window: three tailnets, two connected, a local port to a database, and a check for where an address goes.">
+<img class="shots__panel" src="/shots/panel.png" width="468" height="454" alt="The Tailfuse menu-bar panel: each tailnet with its own switch." loading="lazy">
 </div>
 </div>
 </section>

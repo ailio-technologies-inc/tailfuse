@@ -1,8 +1,27 @@
-# tailfuse
+<p align="center"><img src="brand/app-icon.svg" width="96" height="96" alt=""></p>
 
-Connect to **multiple Tailscale tailnets at once** — no VM, no daemon conflicts, no account switching. macOS, Windows, and Linux.
+<h1 align="center">Tailfuse</h1>
+
+<p align="center"><strong>Several Tailscale tailnets, online at once.</strong><br>
+No VM, no daemon conflicts, no account switching. macOS, Windows and Linux.</p>
+
+<p align="center">
+  <a href="https://tailfuse.com/download"><strong>Download</strong></a> ·
+  <a href="https://tailfuse.com">tailfuse.com</a> ·
+  <a href="#use-with-ai-assistants-mcp">MCP server</a> ·
+  <a href="https://github.com/ailio-technologies-inc/tailfuse/releases">Releases</a>
+</p>
+
+<p align="center"><img src="docs/screenshots/app.png" width="560" alt="The Tailfuse window: three tailnets, two connected, a local port to a database, and a check for where an address goes."></p>
 
 One embedded Tailscale node (userspace-mode `tailscaled`) per tailnet, a loopback router that dispatches traffic by hostname suffix, and a menu-bar app to drive it all.
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/screenshots/panel.png" alt="The menu-bar panel: each tailnet with its own switch."><br><sub><b>The menu-bar panel.</b> Each tailnet has its own switch; one click opens the window.</sub></td>
+<td width="50%" valign="top"><img src="docs/screenshots/settings.png" alt="License and settings: licensed, open at login, the command line, MCP and the system proxy."><br><sub><b>License and settings.</b> Open at login, the <code>tailfuse</code> command, MCP setup and the system proxy.</sub></td>
+</tr>
+</table>
 
 ```
 ┌────────────────────────── one machine ──────────────────────────┐
@@ -23,10 +42,14 @@ Two full daemons fight over routes, `/etc/resolv.conf`, and firewall rules. tail
 ## Install
 
 ```sh
-brew install --cask ailio-technologies-inc/tap/tailfuse   # macOS: the menu-bar app
+brew install --cask ailio-technologies-inc/tap/tailfuse   # macOS: the menu-bar app (signed and notarized)
 winget install ailio-technologies-inc.tailfuse      # Windows
 # or: cargo install --git https://github.com/ailio-technologies-inc/tailfuse tailfuse-cli
 ```
+
+Or download the app for your platform from [tailfuse.com/download](https://tailfuse.com/download). Tailfuse runs Tailscale's own `tailscaled`, which must be installed.
+
+**Set it up with an AI assistant:** the *Set up with AI* button on [tailfuse.com](https://tailfuse.com) copies a prompt for Claude, ChatGPT or Cursor that installs Tailfuse, writes your config and signs you in to each tailnet. The full reference for assistants is at [tailfuse.com/llms.txt](https://tailfuse.com/llms.txt).
 
 ## Quick start
 
@@ -85,35 +108,16 @@ tunnels:
 
 ## Desktop app
 
-A Tauri menu-bar app (`app/`) wraps the same core. On macOS it's a proper
-accessory app: no Dock icon, the window lives in the menu-bar tray, the close
-button hides instead of quitting, and the tray menu shows live per-tailnet
-state (● online / ○ logged out) with Start/Stop right there. One-click login
-opens the browser auth flow; a tray Quit (or window stop) cleans up the PAC
-and the embedded nodes. "Open at login" is built in. It runs entirely as your
-user — no root helper, no kernel extension; the only system setting it
-touches is the PAC URL, which it refuses to overwrite if it isn't its own.
+A Tauri menu-bar app (`app/`) wraps the same core. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL, which it asks for once and never overwrites if it isn't its own.
+
+**Updates are automatic.** The app checks the latest GitHub release's `latest.json` a minute after launch and every six hours, installs a newer version in the background, and relaunches into it once Tailfuse is off, so a session is never cut. Every update is signed with the Tailfuse updater key and verified against the public key built into the app; there is no update server beyond GitHub Releases.
 
 ```sh
 cd app && npm install && npm run tauri dev   # develop
-npm run tauri build                          # signed bundle (dmg/msi/appimage)
+scripts/screenshots.sh                       # re-take docs/screenshots and the site's hero shots
 ```
 
-### Release builds (macOS)
-
-Every build is signed with the Developer ID identity and the hardened
-runtime. Ship-ready builds also carry a notarization ticket:
-
-```sh
-npm run tauri build          # signed .app + .dmg
-scripts/notarize-macos.sh    # sign the dmg, submit to Apple, staple, verify
-```
-
-Notarization uses the org's App Store Connect key from
-`~/.appstoreconnect/` (issuer + key id in `*.env`, the `.p8` in
-`private_keys/` — the same key dagpeek's release uses; nothing of it lives
-in this repo). One-time keychain setup already done:
-`xcrun notarytool ... --keychain-profile tailfuse`.
+Releasing is one command; see [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Use with AI assistants (MCP)
 
@@ -143,7 +147,11 @@ It works against the running Tailfuse (the app, or `tailfuse up`).
 | `crates/tailfuse-core` | Config, per-tailnet daemon management, loopback router, PAC, tunnels, system proxy, licensing |
 | `crates/tailfuse-cli` | The `tailfuse` binary (also used by the app's SSH path) |
 | `crates/licgen` | Vendor-only license key signer (not distributed) |
-| `app/` | Tauri menu-bar app (Rust + vanilla frontend) |
+| `app/` | Tauri menu-bar app (Rust + vanilla frontend), with automatic updates |
+| `site/` | tailfuse.com: a Cloudflare Worker with static assets (downloads, license keys, Stripe receipts) |
+| `brand/` | The icon and mark sources; `scripts/gen-icons.sh` renders every app icon from them |
+| `scripts/` | `release.sh` (cut a release), `screenshots.sh`, `gen-icons.sh`, `notarize-macos.sh` (manual fallback) |
+| `docs/` | `RELEASING.md` and the screenshots |
 
 ## Pricing
 

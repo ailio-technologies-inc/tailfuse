@@ -94,12 +94,16 @@ function statusLine(s) {
   if (total === 0) return "Add a tailnet below to get started.";
   if (!s.up) return `Tailfuse is off. Turn it on to reach your ${total === 1 ? "tailnet" : `${total} tailnets`}.`;
   const online = s.profiles.filter((p) => p.online).length;
-  const waiting = s.profiles.filter((p) => !p.online && !p.error);
+  // Switched off on purpose (paused) is not waiting for a sign-in.
+  const waiting = s.profiles.filter((p) => !p.online && !p.error && !p.paused);
+  const off = s.profiles.filter((p) => p.paused && !p.online).length;
+  const offNote = off ? ` ${off} switched off.` : "";
   const broken = s.profiles.filter((p) => p.error);
   if (broken.length) return `${broken[0].name} has a problem. See the note beside it.`;
   if (waiting.length) return `Sign in to ${waiting.map((p) => p.name).join(" and ")} to bring ${waiting.length === 1 ? "it" : "them"} online.`;
   if (s.proxy_problem) return `${plural(online, "tailnet")} online. One more step before your apps can reach ${online === 1 ? "it" : "them"}.`;
-  return `${plural(online, "tailnet")} online. Open any of their addresses as usual.`;
+  if (online === 0) return `Every tailnet is switched off. Turn one on below.`;
+  return `${plural(online, "tailnet")} online.${offNote} Open any of their addresses as usual.`;
 }
 
 let lastState = null;
