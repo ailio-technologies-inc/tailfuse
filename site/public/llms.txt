@@ -12,7 +12,7 @@ Tailfuse is made by Ailio Technologies Inc. (https://ailio.ca). It is an indepen
 - Routing is by hostname suffix. Each profile owns suffixes such as `.work.ts.net`; the longest match wins.
 - A hostname no profile owns is refused, never sent to another tailnet. Browsers using the PAC file connect direct for those names.
 - Tunnels pin a local port to one tailnet service, for example `127.0.0.1:5432` to `db.work.ts.net:5432`.
-- It runs as the user: no root helper and no kernel extension. The one system setting it changes is the PAC URL, cleared on exit.
+- It runs as the user: no root helper and no kernel extension. The one system setting it changes is the system's automatic proxy (PAC) address, set once with the user's permission and removable from the app's settings.
 
 ## Install
 
