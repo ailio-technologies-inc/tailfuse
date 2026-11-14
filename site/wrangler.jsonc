@@ -5,7 +5,7 @@
   "main": "src/worker.js",
   "compatibility_date": "2025-09-01",
   "account_id": "a72eeb1e21690510bdc83c86d82e61b2",
-  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "404-page" },
   "send_email": [{ "name": "EMAIL" }],
   "observability": { "enabled": true },
   "routes": [
