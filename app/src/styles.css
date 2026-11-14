@@ -304,3 +304,8 @@ code:empty { display: none; }
 .licensed-text strong { font-weight: 500; color: var(--ink); }
 .licensed-text > span { color: var(--muted); font-size: var(--t-label); }
 #unlicensed { display: grid; gap: 10px; }
+
+/* About: the version sits in the row's title; links at the right of the line under it. */
+#version { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.about-links { display: inline-flex; gap: 14px; }
+.set-row--sub .muted { font-size: var(--t-small); }

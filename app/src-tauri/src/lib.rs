@@ -73,6 +73,8 @@ struct StateView {
     tailscale_app: Option<TailscaleAppView>,
     /// Where the `tailfuse` command is installed; empty when it is not.
     cli: String,
+    /// This build's version (the About pane).
+    version: String,
 }
 
 #[derive(Serialize)]
@@ -84,7 +86,7 @@ struct TailscaleAppView {
 }
 
 #[tauri::command]
-async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
+async fn get_state(app: AppHandle, state: State<'_, SharedState>) -> Result<StateView, String> {
     let cfg = state.cfg.lock().await.clone();
     let running = state.running.lock().await;
     let (up, profiles) = match running.as_ref() {
@@ -155,6 +157,7 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
         cli: cli_path()
             .map(|p| p.display().to_string())
             .unwrap_or_default(),
+        version: app.package_info().version.to_string(),
     })
 }
 
@@ -162,6 +165,7 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
 async fn start_inner(state: &AppState) -> Result<(), String> {
     // The menu-bar icon animates while Tailfuse starts (spawn_tray_animation).
     STARTING.store(true, std::sync::atomic::Ordering::Relaxed);
+    watch_connecting();
     let res = start_inner_locked(state).await;
     STARTING.store(false, std::sync::atomic::Ordering::Relaxed);
     res
@@ -169,11 +173,24 @@ async fn start_inner(state: &AppState) -> Result<(), String> {
 
 /// True while Tailfuse is starting its tailnets.
 static STARTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Until when (ms since the epoch) the menu-bar animation watches tailnets
+/// come up; 0 when it is not watching.
+static WATCH_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Something just asked tailnets to come up (Tailfuse turned on, a tailnet's
+/// switch): watch them for up to 90 s and animate the menu-bar icon meanwhile.
+fn watch_connecting() {
+    WATCH_UNTIL.store(now_ms() + 90_000, std::sync::atomic::Ordering::Relaxed);
+}
 
 /// Animate the menu-bar icon while tailnets connect: a spark runs round the
-/// dots (icons/tray-connecting, drawn by scripts/gen-icons.sh). It plays while
-/// Tailfuse starts or any tailnet is on its way up (not one waiting for a
-/// sign-in), for at most 90 s at a stretch, then the icon goes back to rest.
+/// dots (icons/tray-connecting, drawn by scripts/gen-icons.sh).
+///
+/// It costs nothing at rest: tailnets are only asked for their state (one
+/// `tailscale status` each) once a second for the short while after something
+/// asked them to come up (watch_connecting), and the watch ends as soon as
+/// none is on its way up, or after 90 s. A tailnet waiting for a sign-in does
+/// not count as on its way up.
 fn spawn_tray_animation(app: AppHandle) {
     const FRAMES: [&[u8]; 10] = [
         include_bytes!("../icons/tray-connecting/0.png"),
@@ -198,41 +215,54 @@ fn spawn_tray_animation(app: AppHandle) {
         return;
     }
     tauri::async_runtime::spawn(async move {
+        use std::sync::atomic::Ordering::Relaxed;
         use std::time::{Duration, Instant};
         let mut connecting = false;
         let mut polled = Instant::now() - Duration::from_secs(10);
-        let mut since: Option<Instant> = None;
+        // The watch this loop last saw, and how many polls of it found nothing coming up.
+        let mut seen_watch = 0u64;
+        let mut quiet_polls = 0u32;
         let mut animating = false;
         let mut frame = 0usize;
         loop {
-            if polled.elapsed() >= Duration::from_secs(1) {
-                polled = Instant::now();
-                let starting = STARTING.load(std::sync::atomic::Ordering::Relaxed);
-                connecting = starting
-                    || match app.try_state::<SharedState>() {
-                        Some(state) => {
-                            let daemons = match state.running.try_lock() {
-                                Ok(g) => Ok(g.as_ref().map(|r| r.daemons.clone())),
-                                Err(_) => Err(()),
-                            };
-                            match daemons {
-                                Ok(Some(d)) => d.status().await.iter().any(|s| s.connecting),
-                                Ok(None) => false,
-                                // Busy (a start or stop holds it): keep the last answer.
-                                Err(()) => connecting,
-                            }
-                        }
-                        None => false,
-                    };
-                since = match (connecting, since) {
-                    (true, None) => Some(Instant::now()),
-                    (true, s) => s,
-                    (false, _) => None,
-                };
+            let starting = STARTING.load(Relaxed);
+            let until = WATCH_UNTIL.load(Relaxed);
+            if until != seen_watch {
+                seen_watch = until;
+                quiet_polls = 0;
             }
-            let play = since.is_some_and(|t| t.elapsed() < Duration::from_secs(90));
+            let watching = starting || now_ms() < until;
+            if !watching {
+                connecting = false;
+            } else if starting {
+                connecting = true;
+            } else if polled.elapsed() >= Duration::from_secs(1) {
+                polled = Instant::now();
+                let daemons =
+                    app.try_state::<SharedState>()
+                        .map(|state| match state.running.try_lock() {
+                            Ok(g) => Ok(g.as_ref().map(|r| r.daemons.clone())),
+                            Err(_) => Err(()),
+                        });
+                connecting = match daemons {
+                    Some(Ok(Some(d))) => d.status().await.iter().any(|s| s.connecting),
+                    Some(Ok(None)) | None => false,
+                    // Busy (a start or stop holds it): keep the last answer.
+                    Some(Err(())) => connecting,
+                };
+                // A switched-on node can still read "Stopped" for a moment, so
+                // the watch ends only after a few quiet polls in a row.
+                if connecting {
+                    quiet_polls = 0;
+                } else {
+                    quiet_polls += 1;
+                    if quiet_polls >= 3 {
+                        let _ = WATCH_UNTIL.compare_exchange(until, 0, Relaxed, Relaxed);
+                    }
+                }
+            }
             if let Some(tray) = app.tray_by_id(TRAY_ID) {
-                if play {
+                if connecting {
                     let _ = tray.set_icon(Some(frames[frame % frames.len()].clone()));
                     frame += 1;
                     animating = true;
@@ -242,7 +272,8 @@ fn spawn_tray_animation(app: AppHandle) {
                     frame = 0;
                 }
             }
-            tokio::time::sleep(Duration::from_millis(if play { 110 } else { 500 })).await;
+            // At rest this only reads two atomics twice a second.
+            tokio::time::sleep(Duration::from_millis(if connecting { 110 } else { 500 })).await;
         }
     });
 }
@@ -398,6 +429,21 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
     }
     if let Ok(sep) = PredefinedMenuItem::separator(app) {
         items.push(Box::new(sep));
+    }
+    // The system's About panel: name, icon, version and copyright.
+    let info = app.package_info();
+    let about = tauri::menu::AboutMetadata {
+        name: Some("Tailfuse".into()),
+        version: Some(info.version.to_string()),
+        short_version: Some(info.version.to_string()),
+        copyright: Some("© Ailio Technologies Inc.".into()),
+        website: Some("https://tailfuse.com".into()),
+        website_label: Some("tailfuse.com".into()),
+        icon: app.default_window_icon().cloned(),
+        ..Default::default()
+    };
+    if let Ok(item) = PredefinedMenuItem::about(app, Some("About Tailfuse"), Some(about)) {
+        items.push(Box::new(item));
     }
     if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit Tailfuse", true, None::<&str>) {
         items.push(Box::new(quit));
@@ -820,6 +866,9 @@ async fn set_tailnet(
     name: String,
     on: bool,
 ) -> Result<(), String> {
+    if on {
+        watch_connecting();
+    }
     if on && state.running.lock().await.is_none() {
         start_with_only(&state, &name).await?;
         // The node needs a moment before it answers.
@@ -870,6 +919,30 @@ async fn remember_connected(state: &AppState, name: &str, on: bool) {
     if let Some(prof) = cfg.profiles.get_mut(name) {
         prof.connected = on;
         let _ = cfg.save(&state.cfg_path);
+    }
+}
+
+/// About pane: look for a newer version now. Installs it; relaunches straight
+/// away while Tailfuse is off, otherwise on the next stop (as the background
+/// checker does).
+#[tauri::command]
+async fn check_updates(app: AppHandle, state: State<'_, SharedState>) -> Result<String, String> {
+    match updates::check_now(&app)
+        .await
+        .map_err(|e| format!("{e:#}"))?
+    {
+        None => Ok(format!(
+            "You have the latest version ({}).",
+            app.package_info().version
+        )),
+        Some(v) => {
+            if state.running.lock().await.is_none() {
+                app.restart();
+            }
+            Ok(format!(
+                "Version {v} is installed. It starts the next time Tailfuse is off."
+            ))
+        }
     }
 }
 
@@ -1225,6 +1298,7 @@ fn build_tray(app: &AppHandle) -> Result<()> {
                                 remember_connected(&state, &name, false).await;
                                 Ok::<(), String>(())
                             } else {
+                                watch_connecting();
                                 let was_off = state.running.lock().await.is_none();
                                 start_with_only(&state, &name).await?;
                                 if was_off {
@@ -1384,6 +1458,7 @@ pub fn run() {
             alert_user,
             install_cli,
             set_tailnet,
+            check_updates,
             remove_profile,
             add_tunnel,
             remove_tunnel,

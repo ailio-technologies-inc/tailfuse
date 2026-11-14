@@ -48,6 +48,12 @@ where
     });
 }
 
+/// The About pane's "Check for updates": installs a newer version if there is
+/// one and says what happened. Relaunching is left to the caller.
+pub async fn check_now<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<Option<String>> {
+    check_and_install(app).await
+}
+
 /// Install a newer version if there is one; returns its version.
 async fn check_and_install<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<Option<String>> {
     let Some(update) = app.updater()?.check().await? else {

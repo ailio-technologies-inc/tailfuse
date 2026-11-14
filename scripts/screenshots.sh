@@ -54,7 +54,7 @@ shoot() { # shoot <out.png> <frame query> <viewport w> <viewport h>
 }
 mkdir -p "$ROOT/docs/screenshots" "$ROOT/site/public/shots"
 shoot "$ROOT/docs/screenshots/app.png" "page=index.html&w=720&h=820" 848 956
-shoot "$ROOT/docs/screenshots/settings.png" "page=index.html&w=720&h=640&at=license-h" 848 776
+shoot "$ROOT/docs/screenshots/settings.png" "page=index.html&w=720&h=820&at=license-h" 848 956
 shoot "$ROOT/docs/screenshots/panel.png" "page=panel.html&w=340&h=318&panel" 468 454
 cp "$ROOT/docs/screenshots/"{app,settings,panel}.png "$ROOT/site/public/shots/"
 echo "screenshots: docs/screenshots/{app,settings,panel}.png and site/public/shots/"

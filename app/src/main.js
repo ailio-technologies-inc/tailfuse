@@ -189,6 +189,7 @@ let licenseFormOpen = false;
 
 function render(s) {
   lastState = s;
+  if (s.version) $("#version").textContent = s.version;
   $("#power").checked = s.up;
   $("#power-label").textContent = s.up ? "On" : "Off";
   $("#power-label").classList.toggle("on", s.up);
@@ -393,6 +394,26 @@ if (!invoke) {
     if (target.id === "get-key") {
       call("plugin:opener|open_url", { url: "https://tailfuse.com/#pricing" }).catch(() => {});
     }
+  });
+
+  // About: links open in the browser, not in the app's window.
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest?.("a[data-external]");
+    if (!a) return;
+    e.preventDefault();
+    call("plugin:opener|open_url", { url: a.href }).catch(() => {});
+  });
+
+  $("#update-check").addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    $("#update-text").textContent = "Checking for a newer version…";
+    try {
+      $("#update-text").textContent = await call("check_updates");
+    } catch (err) {
+      $("#update-text").textContent = `Could not check for updates: ${err}`;
+    }
+    b.disabled = false;
   });
 
   // Add a tailnet the way the Tailscale app does: the browser sign-in tells Tailfuse which

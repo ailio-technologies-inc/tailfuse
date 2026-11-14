@@ -17,6 +17,7 @@ const state = shot ? {
   proxy_problem: "",
   tailscale_app: null,
   cli: "/usr/local/bin/tailfuse",
+  version: "0.1.24",
   tunnels: [{ name: "prod-db", listen: "127.0.0.1:5432", target: "db.work.ts.net:5432", profile: "work" }],
 } : {
   up: !q.has("off"),
@@ -35,6 +36,7 @@ export async function invoke(cmd, args) {
   if (cmd === "get_state") return state;
   if (cmd === "test_host") return /work\.ts\.net$/.test(args.host) ? `${args.host} → profile "work"` : `${args.host} → not owned (would be refused)`;
   if (cmd === "get_autostart") return shot;
+  if (cmd === "check_updates") return "You have the latest version (0.1.24).";
   if (cmd === "start") state.up = true;
   if (cmd === "stop") state.up = false;
   if (cmd === "sign_in_new_tailnet") { await new Promise((r) => setTimeout(r, 2500)); return "example"; }
