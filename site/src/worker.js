@@ -11,7 +11,7 @@
 //   STRIPE_SECRET_KEY  Stripe secret or restricted key (Checkout Sessions: write).
 // Local runs only (.dev.vars): SITE_ORIGIN, the dev server's own address.
 //   STRIPE_WEBHOOK_SECRET  signing secret of the Stripe webhook that posts to /api/stripe-webhook.
-//   LICENSE_CODES      JSON of shared license codes: {"CODE": "Name on the key", ...}. Kept as a
+//   LICENSE_CODES      JSON of shared license codes: {"CODE": "Name on the key" | {"name", "updateYears"}}. Kept as a
 //                      secret so the codes never sit in the public source.
 // Binding: EMAIL (send_email), used to email a donor their key from license@tailfuse.com.
 
@@ -44,7 +44,7 @@ function cleanEmail(value) {
 }
 
 // Same shape and wire format as crates/licgen: tailfuse_<payload>__<signature>, both base64url.
-export async function signLicense(privkey, email, issuedAt) {
+export async function signLicense(privkey, email, issuedAt, updateYears = 1) {
   const seed = b64urlDecode(String(privkey).trim());
   if (seed.length !== 32) throw new Error('LICENSE_PRIVKEY must be a 32-byte base64url key');
   const pkcs8 = new Uint8Array(PKCS8_ED25519.length + seed.length);
@@ -55,7 +55,7 @@ export async function signLicense(privkey, email, issuedAt) {
     JSON.stringify({
       email,
       max_profiles: 0,
-      updates_until: new Date(issuedAt.getTime() + YEAR_MS).toISOString().slice(0, 10),
+      updates_until: new Date(issuedAt.getTime() + YEAR_MS * updateYears).toISOString().slice(0, 10),
       issued_at: issuedAt.toISOString(),
       key_id: `tf-${Math.floor(issuedAt.getTime() / 1000)}`,
     }),
@@ -235,12 +235,15 @@ async function redeemCode(request, env) {
   }
   const input = await request.json().catch(() => null);
   const code = String(input?.code ?? '').trim().toUpperCase().replace(/[-. ]/g, '_');
-  const name = code && Object.prototype.hasOwnProperty.call(codes, code) ? String(codes[code]) : '';
+  // Each code is "Name on the key", or {"name": ..., "updateYears": n} for a longer update period.
+  const entry = code && Object.prototype.hasOwnProperty.call(codes, code) ? codes[code] : null;
+  const name = entry == null ? '' : String(typeof entry === 'object' ? entry.name ?? '' : entry);
+  const years = typeof entry === 'object' && entry ? Math.min(10, Math.max(1, Number(entry.updateYears) || 1)) : 1;
   if (!name) {
     await new Promise((r) => setTimeout(r, 750));
     return json({ error: 'That code was not accepted.' }, 404);
   }
-  const key = await signLicense(env.LICENSE_PRIVKEY, name, new Date());
+  const key = await signLicense(env.LICENSE_PRIVKEY, name, new Date(), years);
   return json({ key, name });
 }
 
