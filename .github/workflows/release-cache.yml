@@ -1,0 +1,78 @@
+name: Release cache
+
+# Keeps the release build's Rust cache warm. A tag run (release.yml) can only
+# restore caches saved from the default branch, never another tag's, so without
+# this every release compiled every dependency from scratch (~10 min a platform).
+# Each job here builds what its release job builds, with the same shared-key,
+# and saves the result for the next tag to restore.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - "crates/**"
+      - "app/src-tauri/**"
+      - "app/package-lock.json"
+      - .github/workflows/release-cache.yml
+  workflow_dispatch:
+
+concurrency:
+  group: release-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-macos
+      - run: cargo build --release -p tailfuse-cli --target aarch64-apple-darwin
+      - run: cargo build --release -p tailfuse-cli --target x86_64-apple-darwin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cd app && npm ci && npx tauri build --target universal-apple-darwin --no-bundle
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-windows
+      - run: cargo build --release -p tailfuse-cli --target x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - shell: bash
+        run: cd app && npm ci && npx tauri build --no-bundle
+
+  linux-app:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-linux-app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: System libraries for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: cd app && npm ci && npx tauri build --no-bundle

@@ -32,7 +32,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
+      # Restores the cache that release-cache.yml keeps warm on main (a tag can't
+      # read another tag's cache, only main's). Tags don't save their own.
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-macos
+          save-if: false
       - run: cargo build --release -p tailfuse-cli --target aarch64-apple-darwin
       - run: cargo build --release -p tailfuse-cli --target x86_64-apple-darwin
       - name: Package universal binary
@@ -92,7 +97,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      # Restores the cache that release-cache.yml keeps warm on main (a tag can't
+      # read another tag's cache, only main's). Tags don't save their own.
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-windows
+          save-if: false
       - run: cargo build --release -p tailfuse-cli --target x86_64-pc-windows-msvc
       - name: Package
         run: |
@@ -144,7 +154,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # Restores the cache that release-cache.yml keeps warm on main (a tag can't
+      # read another tag's cache, only main's). Tags don't save their own.
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-linux-app
+          save-if: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
