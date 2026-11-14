@@ -307,6 +307,29 @@
   };
   btn.addEventListener('click', copyPrompt);
 
+  // The MCP section's copy button: the same command as the app's Settings, AI assistants (MCP), Copy setup.
+  var MCP = 'claude mcp add tailfuse -- tailfuse mcp';
+  var mcpBtn = document.getElementById('mcp-copy');
+  var mcpCode = document.getElementById('mcp-command');
+  if (mcpBtn) {
+    var mcpTimer = 0;
+    mcpBtn.addEventListener('click', function () {
+      copy(MCP, function () {
+        mcpBtn.textContent = 'Copied';
+        window.clearTimeout(mcpTimer);
+        mcpTimer = window.setTimeout(function () { mcpBtn.textContent = 'Copy the command'; }, 1600);
+      }, function () {
+        // No clipboard: select the command so it can be copied by hand.
+        if (!mcpCode) return;
+        var range = document.createRange();
+        range.selectNodeContents(mcpCode);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      });
+    });
+  }
+
   if (!toggle || !menu) return;
   var items = function () { return Array.prototype.slice.call(menu.querySelectorAll('[role="menuitem"]')); };
   var open = function (focusFirst) {
@@ -338,6 +361,12 @@
     var kind = item.getAttribute('data-setup');
     close(false);
     if (kind === 'ai') copyPrompt();
+    if (kind === 'mcp') {
+      copy(MCP, function () {
+        note.textContent = 'MCP command copied. Run it in a terminal where Claude Code is installed.';
+        later();
+      }, function () { note.textContent = MCP; });
+    }
     if (kind === 'brew') {
       copy('brew install --cask ailio-technologies-inc/tap/tailfuse', function () {
         note.textContent = 'Homebrew command copied. Paste it into Terminal.';

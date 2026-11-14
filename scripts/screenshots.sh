@@ -57,4 +57,10 @@ shoot "$ROOT/docs/screenshots/app.png" "page=index.html&w=720&h=820" 848 956
 shoot "$ROOT/docs/screenshots/settings.png" "page=index.html&w=720&h=820&at=license-h" 848 956
 shoot "$ROOT/docs/screenshots/panel.png" "page=panel.html&w=340&h=318&panel" 468 454
 cp "$ROOT/docs/screenshots/"{app,settings,panel}.png "$ROOT/site/public/shots/"
+# The site serves WebP first (about 60% smaller), with the PNGs as the fallback.
+if command -v cwebp >/dev/null; then
+  for f in app panel; do cwebp -quiet -q 84 -alpha_q 90 "$ROOT/site/public/shots/$f.png" -o "$ROOT/site/public/shots/$f.webp"; done
+else
+  echo "cwebp not found: site/public/shots/*.webp are stale (brew install webp)" >&2
+fi
 echo "screenshots: docs/screenshots/{app,settings,panel}.png and site/public/shots/"

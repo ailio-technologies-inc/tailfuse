@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://tailfuse.com/</loc><lastmod>2026-11-13</lastmod></url>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://tailfuse.com/</loc>
+    <lastmod>2026-11-14</lastmod>
+    <image:image><image:loc>https://tailfuse.com/shots/app.png</image:loc></image:image>
+    <image:image><image:loc>https://tailfuse.com/shots/panel.png</image:loc></image:image>
+  </url>
   <url><loc>https://tailfuse.com/privacy</loc><lastmod>2026-11-13</lastmod></url>
 </urlset>

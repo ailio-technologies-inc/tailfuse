@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tailfuse: connect to several Tailscale tailnets at once</title>
-<meta name="description" content="Tailfuse keeps several Tailscale tailnets online at once on macOS, Windows and Linux, and routes each hostname to the tailnet that owns it. Free for two tailnets; a license for more is by optional donation.">
+<title>Tailfuse: use multiple Tailscale tailnets at once</title>
+<meta name="description" content="Tailfuse keeps several Tailscale tailnets online at once on macOS, Windows and Linux and sends each hostname to the tailnet that owns it. Includes an MCP server for Claude. Free for two tailnets.">
 <link rel="canonical" href="https://tailfuse.com/">
-<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 <meta name="author" content="Ailio Technologies Inc.">
 <meta name="theme-color" content="#18191b">
 <meta name="color-scheme" content="dark">
@@ -15,7 +15,7 @@
 <meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://tailfuse.com/">
 <meta property="og:title" content="Tailfuse: several Tailscale tailnets, online at once">
-<meta property="og:description" content="One Tailscale node per tailnet and a local router that sends each hostname to the tailnet that owns it. Free for two tailnets; a license for more is by optional donation.">
+<meta property="og:description" content="One Tailscale node per tailnet and a local router that sends each hostname to the tailnet that owns it, with an MCP server for Claude and other AI assistants. Free for two tailnets.">
 <meta property="og:image" content="https://tailfuse.com/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
@@ -23,7 +23,7 @@
 <meta property="og:image:alt" content="Tailfuse: several Tailscale tailnets, online at once. One ring on the left feeds two orange lanes running to the right.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Tailfuse: several Tailscale tailnets, online at once">
-<meta name="twitter:description" content="One Tailscale node per tailnet and a local router that sends each hostname to the tailnet that owns it. Free for two tailnets.">
+<meta name="twitter:description" content="One Tailscale node per tailnet and a local router that sends each hostname to the tailnet that owns it, with an MCP server for Claude. Free for two tailnets.">
 <meta name="twitter:image" content="https://tailfuse.com/og.png">
 <meta name="twitter:image:alt" content="Tailfuse: several Tailscale tailnets, online at once.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -34,6 +34,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400..500&display=swap" rel="stylesheet">
+<link rel="preload" href="/shots/app.webp" as="image" type="image/webp" fetchpriority="high">
 <link rel="stylesheet" href="/styles.css">
 <script type="application/ld+json">
 {
@@ -44,8 +45,24 @@
       "@id": "https://ailio.ca/#organization",
       "name": "Ailio Technologies Inc.",
       "url": "https://ailio.ca/",
-      "address": { "@type": "PostalAddress", "addressLocality": "Victoria", "addressRegion": "BC", "addressCountry": "CA" },
-      "sameAs": ["https://clinicly.ca/", "https://dagpeek.com/", "https://heytownhall.com/", "https://daycarenearyou.ca/", "https://careinyourlanguage.ca/", "https://crenel.ca/", "https://hunch.money/", "https://framethat.art/", "https://abuzz.earth/", "https://github.com/ailio-technologies-inc"]
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Victoria",
+        "addressRegion": "BC",
+        "addressCountry": "CA"
+      },
+      "sameAs": [
+        "https://clinicly.ca/",
+        "https://dagpeek.com/",
+        "https://heytownhall.com/",
+        "https://daycarenearyou.ca/",
+        "https://careinyourlanguage.ca/",
+        "https://crenel.ca/",
+        "https://hunch.money/",
+        "https://framethat.art/",
+        "https://abuzz.earth/",
+        "https://github.com/ailio-technologies-inc"
+      ]
     },
     {
       "@type": "WebSite",
@@ -53,7 +70,31 @@
       "url": "https://tailfuse.com/",
       "name": "Tailfuse",
       "inLanguage": "en",
-      "publisher": { "@id": "https://ailio.ca/#organization" }
+      "publisher": {
+        "@id": "https://ailio.ca/#organization"
+      }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://tailfuse.com/#webpage",
+      "url": "https://tailfuse.com/",
+      "name": "Tailfuse: use multiple Tailscale tailnets at once",
+      "inLanguage": "en",
+      "isPartOf": {
+        "@id": "https://tailfuse.com/#website"
+      },
+      "about": {
+        "@id": "https://tailfuse.com/#software"
+      },
+      "mainEntity": {
+        "@id": "https://tailfuse.com/#software"
+      },
+      "primaryImageOfPage": {
+        "@type": "ImageObject",
+        "url": "https://tailfuse.com/og.png",
+        "width": 1200,
+        "height": 630
+      }
     },
     {
       "@type": "SoftwareApplication",
@@ -61,21 +102,42 @@
       "name": "Tailfuse",
       "url": "https://tailfuse.com/",
       "image": "https://tailfuse.com/og.png",
-      "description": "Tailfuse connects one machine to several Tailscale tailnets at once. It runs one userspace Tailscale node per tailnet and a loopback router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it.",
+      "screenshot": [
+        {
+          "@type": "ImageObject",
+          "url": "https://tailfuse.com/shots/app.png",
+          "caption": "The Tailfuse window: three tailnets, two connected, a local port to a database, and a check for where an address goes."
+        },
+        {
+          "@type": "ImageObject",
+          "url": "https://tailfuse.com/shots/panel.png",
+          "caption": "The Tailfuse menu-bar panel: each tailnet with its own switch."
+        }
+      ],
+      "description": "Tailfuse connects one machine to several Tailscale tailnets at once. It runs one userspace Tailscale node per tailnet and a loopback router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it. Its command line includes an MCP server (tailfuse mcp) for Claude and other AI assistants.",
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "Networking",
       "operatingSystem": "macOS, Windows, Linux",
       "downloadUrl": "https://tailfuse.com/download",
-      "installUrl": "https://tailfuse.com/#install",
+      "installUrl": "https://tailfuse.com/download",
+      "softwareRequirements": "Tailscale's tailscaled",
       "license": "https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE",
       "isAccessibleForFree": true,
-      "sameAs": ["https://github.com/ailio-technologies-inc/tailfuse"],
-      "author": { "@id": "https://ailio.ca/#organization" },
-      "publisher": { "@id": "https://ailio.ca/#organization" },
+      "sameAs": [
+        "https://github.com/ailio-technologies-inc/tailfuse"
+      ],
+      "author": {
+        "@id": "https://ailio.ca/#organization"
+      },
+      "publisher": {
+        "@id": "https://ailio.ca/#organization"
+      },
       "offers": {
         "@type": "Offer",
         "price": "0",
         "priceCurrency": "USD",
+        "availability": "https://schema.org/InStock",
+        "url": "https://tailfuse.com/download",
         "description": "Free for two tailnet profiles. A license key for more profiles is by optional donation, from $0."
       },
       "featureList": [
@@ -84,32 +146,96 @@
         "SOCKS5, HTTP CONNECT and a generated PAC file",
         "Hostnames no profile owns are refused, never sent to another tailnet",
         "Tunnels that pin a local port to a tailnet service",
-        "Menu-bar app and a tailfuse command-line tool"
+        "Menu-bar app and a tailfuse command-line tool",
+        "MCP server for Claude and other AI assistants (tailfuse mcp) with six tools: tailfuse_status, tailfuse_list_devices, tailfuse_which_tailnet, tailfuse_http_request, tailfuse_check_port, tailfuse_set_connected"
       ]
     },
     {
       "@type": "FAQPage",
       "@id": "https://tailfuse.com/#faq",
+      "isPartOf": {
+        "@id": "https://tailfuse.com/#webpage"
+      },
       "mainEntity": [
         {
           "@type": "Question",
           "name": "What does a Tailfuse license cost?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Whatever you choose, including nothing. Two tailnets are free. A license key for more is by optional donation, and a $0 key is the same key as a $10 one." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Two tailnets are free. A license key for more costs whatever you choose, including nothing, and a $0 key is the same key as a $10 one."
+          }
         },
         {
           "@type": "Question",
           "name": "Is Tailfuse made by Tailscale?",
-          "acceptedAnswer": { "@type": "Answer", "text": "No. Tailfuse is an independent tool. It runs the tailscaled binary, which stays under the Tailscale terms." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Tailfuse is an independent tool. It runs the tailscaled binary, which stays under the Tailscale terms."
+          }
         },
         {
           "@type": "Question",
           "name": "Does Tailfuse replace the Tailscale app?",
-          "acceptedAnswer": { "@type": "Answer", "text": "No. An installed Tailscale client keeps owning the primary tailnet, and Tailfuse adds the others beside it." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. An installed Tailscale client keeps owning the primary tailnet, and Tailfuse adds the others beside it."
+          }
         },
         {
           "@type": "Question",
           "name": "Can a server log in to a tailnet unattended?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Put a Tailscale auth key in that profile's config and it signs in with no browser step. On macOS and Windows, Tailfuse then moves the key into the Keychain or Credential Manager." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Put a Tailscale auth key in that profile's config and it signs in with no browser step. On macOS and Windows, Tailfuse then moves the key into the Keychain or Credential Manager."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I use multiple Tailscale tailnets at once?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Tailscale app connects to one tailnet at a time, and switching accounts disconnects the other. Tailfuse runs one Tailscale node per tailnet in userspace mode, plus a local router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it. Add a profile for each tailnet with the hostname suffixes it owns, sign each one in once, and turn Tailfuse on."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Tailfuse work with Claude and other MCP clients?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The tailfuse command line includes an MCP server that runs over stdio. For Claude Code, run claude mcp add tailfuse -- tailfuse mcp. Other clients take {\"command\": \"tailfuse\", \"args\": [\"mcp\"]}. In the app, Settings has the same command under AI assistants (MCP)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What can an AI assistant do through Tailfuse?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It can list your tailnets and their devices, ask which tailnet owns a hostname, make HTTP requests to tailnet services, check whether a port is open, and connect or disconnect a tailnet. Requests to a hostname no tailnet owns are refused."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Tailfuse change my routes or DNS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Each tailnet runs without a TUN device, a route or a DNS change, and Tailfuse runs as your user with no root helper. The one system setting it changes is the automatic proxy (PAC) address, set with your permission and removable from the app's settings."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do browsers and terminal tools reach tailnet hosts?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Browsers follow the system's automatic proxy setting. In a terminal, tailfuse run starts a command with the proxy set and tailfuse ssh opens SSH through the right tailnet. Other apps can use 127.0.0.1:43100 as a SOCKS5 or HTTP proxy, or a tunnel that pins a local port to one service."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which systems does Tailfuse run on?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "macOS (a universal app, signed and notarized), Windows on x86-64 and Linux on x86-64 as an AppImage or a .deb. The command line also comes for Linux on arm64. Tailscale's own tailscaled must be installed."
+          }
         }
       ]
     }
@@ -133,7 +259,9 @@
 <a class="link" href="#routing">Routing</a>
 <a class="link" href="#isolation">Isolation</a>
 <a class="link" href="#cli">Command line</a>
+<a class="link" href="#mcp">MCP</a>
 <a class="link" href="#pricing">License</a>
+<a class="link" href="#faq">Questions</a>
 </nav>
 <div class="nav__side">
 <a class="link nav__gh" href="https://github.com/ailio-technologies-inc/tailfuse">GitHub</a>
@@ -153,6 +281,7 @@
 <div class="setup-split__menu" id="setup-menu" role="menu" hidden>
 <button type="button" role="menuitem" data-setup="ai"><strong>Set up with AI</strong><span>Copy a prompt for Claude, ChatGPT or Cursor</span></button>
 <a role="menuitem" href="#cli" data-setup="manual"><strong>Set up manually</strong><span>The config file and the commands, step by step</span></a>
+<button type="button" role="menuitem" data-setup="mcp"><strong>Add the MCP server to Claude Code</strong><span><code>claude mcp add tailfuse -- tailfuse mcp</code></span></button>
 <button type="button" role="menuitem" data-setup="brew"><strong>Copy the Homebrew command</strong><span><code>brew install --cask ailio-technologies-inc/tap/tailfuse</code></span></button>
 </div>
 </div>
@@ -172,8 +301,8 @@ Ask me before any step that needs my password or changes a system setting. Never
 
 <div class="frame wrap">
 <div class="shots">
-<img class="shots__app" src="/shots/app.png" width="848" height="956" alt="The Tailfuse window: three tailnets, two connected, a local port to a database, and a check for where an address goes.">
-<img class="shots__panel" src="/shots/panel.png" width="468" height="454" alt="The Tailfuse menu-bar panel: each tailnet with its own switch." loading="lazy">
+<picture><source srcset="/shots/app.webp" type="image/webp"><img class="shots__app" src="/shots/app.png" width="848" height="956" fetchpriority="high" alt="The Tailfuse window: three tailnets, two connected, a local port to a database, and a check for where an address goes."></picture>
+<picture><source srcset="/shots/panel.webp" type="image/webp"><img class="shots__panel" src="/shots/panel.png" width="468" height="454" alt="The Tailfuse menu-bar panel: each tailnet with its own switch." loading="lazy"></picture>
 </div>
 </div>
 </section>
@@ -312,7 +441,7 @@ Ask me before any step that needs my password or changes a system setting. Never
 <div class="cmd"><code>tailfuse run curl http://wiki.work.ts.net</code><span>Runs any command with the proxy environment set.</span></div>
 <div class="cmd"><code>tailfuse env</code><span>Prints the proxy environment for your shell.</span></div>
 <div class="cmd"><code>tailfuse down</code><span>Clears the system PAC.</span></div>
-<div class="cmd"><code>tailfuse mcp</code><span>Runs an MCP server so Claude and other AI assistants can see your tailnets and reach their services.</span></div>
+<div class="cmd"><code>tailfuse mcp</code><span>Runs an MCP server so Claude and other AI assistants can see your tailnets and reach their services. <a class="link" href="#mcp">The six tools</a></span></div>
 </div>
 <div class="cli-install" id="install-cli">
 <h3>Install the command line</h3>
@@ -321,6 +450,60 @@ Ask me before any step that needs my password or changes a system setting. Never
 <div class="install"><span>Homebrew</span><code>brew install --cask ailio-technologies-inc/tap/tailfuse</code></div>
 <div class="install"><span>Windows</span><code>winget install ailio-technologies-inc.tailfuse</code></div>
 <div class="install"><span>Cargo</span><code>cargo install --git https://github.com/ailio-technologies-inc/tailfuse tailfuse-cli</code></div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- MCP: the setup on the left (the command, and the same row the app's Settings shows), a real-shaped Claude Code
+     session on the right using the server's actual tool names and replies, the six tools below. Tool names, fields
+     and the refusal text come from crates/tailfuse-cli/src/mcp.rs. -->
+<section class="section" id="mcp">
+<div class="wrap split">
+<div class="split__text">
+<h2>An MCP server for Claude and other AI assistants</h2>
+<p class="lead"><code>tailfuse mcp</code> lets an assistant see your tailnets, find devices and call services on them. It goes through the same router as everything else, so a hostname no tailnet owns is refused.</p>
+<div class="mcp-setup">
+<div class="mcp-cmd">
+<span class="mcp-cmd__label">Claude Code</span>
+<code id="mcp-command">claude mcp add tailfuse -- tailfuse mcp</code>
+<button class="btn btn--quiet btn--sm mcp-cmd__copy" type="button" id="mcp-copy" aria-describedby="mcp-command">Copy the command</button>
+</div>
+<div class="mcp-cmd">
+<span class="mcp-cmd__label">Any MCP client</span>
+<code>{"command": "tailfuse", "args": ["mcp"]}</code>
+</div>
+<div class="mcp-cmd">
+<span class="mcp-cmd__label">In the app</span>
+<p>Settings, then <strong>AI assistants (MCP)</strong>, then Copy setup. It needs the command line, which the Install button in Settings puts in place.</p>
+</div>
+</div>
+<p class="mcp-note">The server runs over stdio and uses the Tailfuse that is already on: the menu-bar app, or <code>tailfuse up</code>. <a class="link" href="#install-cli">Install the command line</a></p>
+</div>
+
+<div class="term term--file term--chat">
+<div class="term__name">Claude Code, with the tailfuse MCP server</div>
+<div class="chat">
+<p class="chat__you"><span class="accent">&gt;</span> Is the wiki on the work tailnet up? And check grafana.example.com.</p>
+<div class="chat__call"><span class="chat__tool">tailfuse_which_tailnet</span><span class="chat__args">host: "wiki.work.ts.net"</span></div>
+<p class="chat__out">{ "host": "wiki.work.ts.net", "tailnet": "work", "routed": true }</p>
+<div class="chat__call"><span class="chat__tool">tailfuse_http_request</span><span class="chat__args">url: "http://wiki.work.ts.net/health"</span></div>
+<p class="chat__out">{ "tailnet": "work", "status": 200, "milliseconds": 48, "truncated": false }</p>
+<div class="chat__call"><span class="chat__tool">tailfuse_http_request</span><span class="chat__args">url: "https://grafana.example.com/"</span></div>
+<p class="chat__out chat__out--err">no tailnet owns grafana.example.com; Tailfuse only reaches hostnames a tailnet owns (see tailfuse_status for the suffixes)</p>
+<p class="chat__say">The wiki is up: /health on the work tailnet returned 200 in 48 ms. grafana.example.com isn't on any of your tailnets, so Tailfuse refused it.</p>
+</div>
+</div>
+
+<div class="mcp-tools">
+<h3>The six tools</h3>
+<div class="tools">
+<div class="cmd"><code>tailfuse_status</code><span>Each tailnet: connected or not, the account it signed in with, the suffixes it owns, and this computer's name and IPs on it.</span></div>
+<div class="cmd"><code>tailfuse_list_devices</code><span>Devices on one tailnet or all of them: name, DNS name, IPs, OS and whether each is online.</span></div>
+<div class="cmd"><code>tailfuse_which_tailnet</code><span>Which tailnet a hostname or URL goes to, or that no tailnet owns it.</span></div>
+<div class="cmd"><code>tailfuse_http_request</code><span>An HTTP or HTTPS request to a tailnet service. It returns the status, headers and up to 64 KB of the body.</span></div>
+<div class="cmd"><code>tailfuse_check_port</code><span>Whether a TCP port on a tailnet host accepts connections, such as a database on port 5432.</span></div>
+<div class="cmd"><code>tailfuse_set_connected</code><span>Connects or disconnects one tailnet while Tailfuse is running.</span></div>
 </div>
 </div>
 </div>
@@ -340,10 +523,10 @@ Ask me before any step that needs my password or changes a system setting. Never
 <div class="slot slot--key"><span class="slot__n">3+</span><div><strong>Every profile after that</strong><span>A license key, by optional donation, with every future update included.</span></div></div>
 </div>
 <div class="faq">
-<div class="faq__row"><h3>What does a license cost?</h3><p>Whatever you choose, including nothing. The donation is optional, and a $0 key is the same key as a $10 one.</p></div>
+<div class="faq__row"><h3>What does a Tailfuse license cost?</h3><p>Two tailnets are free. A license key for more costs whatever you choose, including nothing, and a $0 key is the same key as a $10 one.</p></div>
 <div class="faq__row"><h3>Is Tailfuse made by Tailscale?</h3><p>No. Tailfuse is an independent tool. It runs the tailscaled binary, which stays under the Tailscale terms.</p></div>
-<div class="faq__row"><h3>Does it replace the Tailscale app?</h3><p>No. An installed Tailscale client keeps owning the primary tailnet, and Tailfuse adds the others beside it.</p></div>
-<div class="faq__row"><h3>Can a server log in unattended?</h3><p>Yes. Put a Tailscale auth key in that profile's config and it signs in with no browser step. On macOS and Windows, Tailfuse then moves the key into the Keychain or Credential Manager.</p></div>
+<div class="faq__row"><h3>Does Tailfuse replace the Tailscale app?</h3><p>No. An installed Tailscale client keeps owning the primary tailnet, and Tailfuse adds the others beside it.</p></div>
+<div class="faq__row"><h3>Can a server log in to a tailnet unattended?</h3><p>Yes. Put a Tailscale auth key in that profile's config and it signs in with no browser step. On macOS and Windows, Tailfuse then moves the key into the Keychain or Credential Manager.</p></div>
 </div>
 </div>
 
@@ -375,6 +558,24 @@ Ask me before any step that needs my password or changes a system setting. Never
 </div>
 </section>
 
+<!-- Questions people ask about Tailfuse. Every answer here is mirrored, word for word, in the FAQPage JSON-LD above. -->
+<section class="section" id="faq">
+<div class="wrap split">
+<div class="split__text">
+<h2>Questions about Tailfuse</h2>
+<p class="lead">How it sits beside Tailscale, what it changes on your computer, and how AI assistants use it.</p>
+</div>
+<div class="faq faq--wide">
+<div class="faq__row"><h3>How do I use multiple Tailscale tailnets at once?</h3><p>The Tailscale app connects to one tailnet at a time, and switching accounts disconnects the other. Tailfuse runs one Tailscale node per tailnet in userspace mode, plus a local router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it. Add a profile for each tailnet with the hostname suffixes it owns, sign each one in once, and turn Tailfuse on.</p></div>
+<div class="faq__row"><h3>Does Tailfuse work with Claude and other MCP clients?</h3><p>Yes. The <code>tailfuse</code> command line includes an MCP server that runs over stdio. For Claude Code, run <code>claude mcp add tailfuse -- tailfuse mcp</code>. Other clients take <code>{"command": "tailfuse", "args": ["mcp"]}</code>. In the app, Settings has the same command under AI assistants (MCP).</p></div>
+<div class="faq__row"><h3>What can an AI assistant do through Tailfuse?</h3><p>It can list your tailnets and their devices, ask which tailnet owns a hostname, make HTTP requests to tailnet services, check whether a port is open, and connect or disconnect a tailnet. Requests to a hostname no tailnet owns are refused.</p></div>
+<div class="faq__row"><h3>Does Tailfuse change my routes or DNS?</h3><p>No. Each tailnet runs without a TUN device, a route or a DNS change, and Tailfuse runs as your user with no root helper. The one system setting it changes is the automatic proxy (PAC) address, set with your permission and removable from the app's settings.</p></div>
+<div class="faq__row"><h3>How do browsers and terminal tools reach tailnet hosts?</h3><p>Browsers follow the system's automatic proxy setting. In a terminal, <code>tailfuse run</code> starts a command with the proxy set and <code>tailfuse ssh</code> opens SSH through the right tailnet. Other apps can use 127.0.0.1:43100 as a SOCKS5 or HTTP proxy, or a tunnel that pins a local port to one service.</p></div>
+<div class="faq__row"><h3>Which systems does Tailfuse run on?</h3><p>macOS (a universal app, signed and notarized), Windows on x86-64 and Linux on x86-64 as an AppImage or a .deb. The command line also comes for Linux on arm64. Tailscale's own tailscaled must be installed. <a class="link" href="/download">Download Tailfuse</a></p></div>
+</div>
+</div>
+</section>
+
 </main>
 
 <!-- Close and footer: one large line that ripples under the pointer, one large button, the downloads and install commands, the legal row. -->
@@ -395,6 +596,7 @@ Ask me before any step that needs my password or changes a system setting. Never
 <nav aria-label="Footer">
 <a class="link" href="https://github.com/ailio-technologies-inc/tailfuse">GitHub</a>
 <a class="link" href="https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE">MIT license</a>
+<a class="link" href="#mcp">MCP server</a>
 <a class="link" href="#pricing">License key</a>
 <a class="link" href="/privacy">Privacy</a>
 </nav>

@@ -64,10 +64,26 @@ tunnels:
 - `tailfuse tunnel add prod-db --listen 127.0.0.1:5432 --target db.work.ts.net:5432 --profile work`: pin a local port to a tailnet service.
 - `tailfuse serve-pac`: just the PAC URL, for manual browser configuration.
 - `tailfuse license activate <key>`: activate a license key.
+- `tailfuse mcp`: run the MCP server on stdio, for Claude and other AI assistants (see below).
 
 ## Use with AI assistants (MCP)
 
-`tailfuse mcp` runs a Model Context Protocol server on stdio. Register it with `claude mcp add tailfuse -- tailfuse mcp`, or `{"command": "tailfuse", "args": ["mcp"]}` in any MCP client. Tools: `tailfuse_status`, `tailfuse_list_devices`, `tailfuse_which_tailnet`, `tailfuse_http_request` (HTTP to a tailnet service, owned hostnames only), `tailfuse_check_port`, `tailfuse_set_connected`. It uses the running Tailfuse and the same rule: only hostnames a tailnet owns are reachable.
+`tailfuse mcp` runs a Model Context Protocol server on stdio. It is part of the `tailfuse` command-line tool.
+
+- Claude Code: `claude mcp add tailfuse -- tailfuse mcp`
+- Any other MCP client: `{"command": "tailfuse", "args": ["mcp"]}`
+- In the desktop app: Settings, AI assistants (MCP), Copy setup copies the Claude Code command. It needs the command line, which the Install button in the app's Settings puts in place.
+
+It uses the Tailfuse that is already running (the menu-bar app, or `tailfuse up`) and the same rule as the router: only hostnames a tailnet owns are reachable; anything else is refused.
+
+Tools:
+
+- `tailfuse_status`: each tailnet's state (connected, disconnected, needs sign-in, off), the account it signed in with, the suffixes it owns, and this computer's name and Tailscale IPs on it.
+- `tailfuse_list_devices`: devices on one tailnet or all of them: name, DNS name, Tailscale IPs, OS and whether each is online. Filters: `tailnet`, `online_only`, `query`.
+- `tailfuse_which_tailnet`: which tailnet a hostname or URL is routed to, or that no tailnet owns it.
+- `tailfuse_http_request`: an HTTP(S) request (GET, HEAD, POST, PUT, PATCH, DELETE) to a service on a tailnet. Returns the status, headers and up to 64 KB of the body.
+- `tailfuse_check_port`: whether a TCP port on a tailnet host accepts connections, for example a database on db.work.ts.net:5432.
+- `tailfuse_set_connected`: connect or disconnect one tailnet while Tailfuse is running.
 
 ## License keys and price
 
@@ -76,6 +92,15 @@ tunnels:
 - Every key includes every future update, forever.
 - Keys are signed and verified offline: no phone-home, no account, no telemetry.
 - A shared license code (for a group) is exchanged once for a signed key at tailfuse.com/api/redeem; the key is then verified offline like any other.
+
+## Questions
+
+- How do I use multiple Tailscale tailnets at once? The Tailscale app connects to one tailnet at a time. Install Tailfuse, add one profile per tailnet with the hostname suffixes it owns, sign each in once (`tailfuse profile login <name>`), and turn it on (`tailfuse up` or the app's switch). Each tailnet gets its own userspace Tailscale node, and the router on 127.0.0.1:43100 sends each hostname to its tailnet.
+- Does Tailfuse work with Claude or other MCP clients? Yes, through `tailfuse mcp` (see above).
+- Is Tailfuse made by Tailscale? No. It is an independent tool that runs Tailscale's `tailscaled`.
+- Does it replace the Tailscale app? No. An installed Tailscale client keeps its primary tailnet; Tailfuse adds the others beside it.
+- Does it change routes or DNS? No. The one system setting it changes is the automatic proxy (PAC) address, with the user's permission.
+- Can a server sign in unattended? Yes: put a Tailscale auth key in that profile's config.
 
 ## Links
 
