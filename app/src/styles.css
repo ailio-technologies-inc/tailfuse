@@ -277,3 +277,20 @@ code:empty { display: none; }
 .titlebar h1 { font-size: 14px; }
 .titlebar .brand-mark { width: 19px; height: 15px; }
 .titlebar .switch { transform: scale(.84); transform-origin: right center; }
+
+/* settings as one grouped list: label and line on the left, the control on the right */
+.settings { display: grid; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; min-height: 56px; box-sizing: border-box; }
+.set-row + .set-row { border-top: 1px solid var(--line); }
+.set-row--sub { min-height: 0; padding-top: 0; border-top: 0 !important; margin-top: -6px; }
+.set-text { display: grid; gap: 2px; min-width: 0; }
+.set-text strong { font-size: var(--t-small); font-weight: 500; }
+.set-text span { font-size: var(--t-label); color: var(--muted); }
+.set-text code { padding: 0 4px; font-size: 11.5px; }
+.set-row .switch--sm input:checked + .slider::before { background: #ffffff; }
+.link-btn { padding: 0; border: 0; background: none; font: inherit; font-size: var(--t-label); color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.link-btn:hover { color: var(--ink); }
+.link-btn:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: 2px; }
+/* the Tailscale app, on the tailnet row it shares */
+.ts-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: var(--t-label); color: var(--muted); }
+.ts-badge .dot { width: 6px; height: 6px; box-shadow: none; }

@@ -130,23 +130,36 @@
 
       <section class="pane" aria-labelledby="settings-h">
         <h2 id="settings-h">Settings</h2>
-        <label class="check">
-          <input type="checkbox" id="autostart" />
-          <span>Open Tailfuse when I log in</span>
-        </label>
-        <div class="setting">
-          <div class="notice-text">
-            <strong>The tailfuse command</strong>
-            <p id="cli-text">For a terminal: tailfuse status, tailfuse ssh and more.</p>
+        <div class="settings">
+          <div class="set-row">
+            <div class="set-text">
+              <strong>Open at login</strong>
+              <span>Start Tailfuse in the menu bar when you log in.</span>
+            </div>
+            <label class="switch switch--sm" title="Open Tailfuse when you log in">
+              <input type="checkbox" id="autostart" aria-label="Open Tailfuse when you log in" />
+              <span class="slider"></span>
+            </label>
           </div>
-          <button type="button" class="btn btn--secondary btn--sm" id="cli-install">Install the command</button>
+          <div class="set-row">
+            <div class="set-text">
+              <strong>Command line</strong>
+              <span id="cli-text">Use <code>tailfuse status</code>, <code>tailfuse ssh</code> and more in a terminal.</span>
+            </div>
+            <button type="button" class="btn btn--secondary btn--sm" id="cli-install">Install</button>
+          </div>
+          <div class="set-row">
+            <div class="set-text">
+              <strong>System proxy</strong>
+              <span>For an app that ignores the system setting, give it this address.</span>
+            </div>
+            <button type="button" class="btn btn--secondary btn--sm" id="pac-copy" title="Copy the proxy address">Copy address</button>
+          </div>
+          <div class="set-row set-row--sub">
+            <code id="pac-url"></code>
+            <button type="button" class="link-btn" id="proxy-remove">Remove from system settings</button>
+          </div>
         </div>
-        <details class="advanced">
-          <summary>Advanced</summary>
-          <p class="hint">Tailfuse sets this as your Mac’s automatic proxy (PAC) address. For an app that ignores the system setting, enter it there by hand:</p>
-          <p><code id="pac-url"></code></p>
-          <button type="button" class="btn btn--secondary btn--sm" id="proxy-remove">Remove the system proxy setting</button>
-        </details>
       </section>
     </div>
 

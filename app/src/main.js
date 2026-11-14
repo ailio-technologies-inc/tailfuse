@@ -105,6 +105,7 @@ function statusLine(s) {
 let lastState = null;
 let cliBusy = false;
 let signingIn = false;
+let tailscaleApp = null;
 const pendingRemove = new Map(); // "profile:work" -> timer, for the two-step Remove
 
 function removeButton(kind, name) {
@@ -147,6 +148,9 @@ function profileEntry(p, up) {
       ),
       h("span", { class: "mono muted" }, p.suffixes.map((x) => `*${x}`).join("  ")),
       p.error && h("span", { class: "muted bad" }, p.error),
+      tailscaleApp?.same_as === p.name && h("span", { class: "ts-badge" },
+        h("span", { class: "dot on" }), "Also connected in the Tailscale app ",
+        h("button", { class: "link-btn", type: "button", id: "ts-app-off", title: "Disconnect the Tailscale app; it stays signed in" }, "Disconnect it")),
     ),
     h("div", { class: "entry-actions" },
       h("span", { class: `state ${tone}` }, label),
@@ -193,18 +197,17 @@ function render(s) {
     : `${sentence(s.proxy_problem || "")} You can still set it by hand: see Advanced, under Settings.`;
   $("#pac-url").textContent = s.pac_url;
 
-  // The official Tailscale app, while it is connected alongside Tailfuse.
+  // The official Tailscale app: shown on the tailnet it shares with Tailfuse; a separate
+  // notice only when it is on a tailnet Tailfuse doesn't have.
   const app = s.tailscale_app;
-  $("#ts-app").hidden = !app;
-  if (app) {
-    const who = [app.tailnet, app.account && `as ${app.account}`].filter(Boolean).join(" ");
-    $("#ts-app-text").textContent = app.same_as
-      ? `It is on ${who}, the same tailnet as ${app.same_as} here. The two work side by side; disconnect it to let Tailfuse carry that tailnet alone.`
-      : `It is on ${who || "another tailnet"}. The two work side by side; disconnect it if you want Tailfuse to carry everything.`;
+  tailscaleApp = app;
+  $("#ts-app").hidden = !app || Boolean(app.same_as);
+  if (app && !app.same_as) {
+    $("#ts-app-text").textContent = `It is on ${[app.tailnet, app.account && `as ${app.account}`].filter(Boolean).join(" ") || "another tailnet"}, side by side with Tailfuse.`;
   }
 
-  $("#cli-install").textContent = s.cli ? "Reinstall the command" : "Install the command";
-  if (!cliBusy) $("#cli-text").textContent = s.cli ? `Installed at ${s.cli}. In a terminal: tailfuse status` : "For a terminal: tailfuse status, tailfuse ssh and more.";
+  $("#cli-install").textContent = s.cli ? "Reinstall" : "Install";
+  if (!cliBusy && s.cli) $("#cli-text").textContent = `Installed at ${s.cli}.`;
 
   const count = s.profiles.length;
   $("#profile-hint").textContent = count === 0 ? "" : count <= 2 ? `${count} of 2 free tailnets used` : `${count} tailnets, licensed`;
@@ -348,6 +351,14 @@ if (!invoke) {
       const name = rest.join(":");
       await call(kind === "profile" ? "remove_profile" : "remove_tunnel", { name }).catch(() => {});
       return refresh();
+    }
+
+    if (target.id === "pac-copy") {
+      navigator.clipboard.writeText($("#pac-url").textContent).then(() => {
+        target.textContent = "Copied";
+        setTimeout(() => (target.textContent = "Copy address"), 1500);
+      }, () => {});
+      return;
     }
 
     if (target.id === "ts-app-off") {
