@@ -488,8 +488,8 @@ async fn connect_browsers(state: State<'_, SharedState>, app: AppHandle) -> Resu
             state.proxy_problem.lock().await.clear();
             notify(
                 &app,
-                "Browsers connected",
-                "Your tailnet addresses now open in your browser as usual.",
+                "System proxy set",
+                "Your tailnet addresses now open as usual.",
             );
             Ok(())
         }

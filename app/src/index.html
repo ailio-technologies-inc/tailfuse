@@ -39,10 +39,10 @@
       </div>
       <div id="proxy-note" class="notice notice--warn" hidden>
         <div class="notice-text">
-          <strong>One step left: connect your browsers</strong>
+          <strong>One step left: allow the system proxy</strong>
           <p id="proxy-why"></p>
         </div>
-        <button type="button" class="btn btn--primary btn--sm" id="proxy-fix">Connect my browsers</button>
+        <button type="button" class="btn btn--primary btn--sm" id="proxy-fix">Allow</button>
       </div>
       <div id="ts-app" class="notice notice--info" hidden>
         <div class="notice-text">
@@ -142,12 +142,25 @@
         </div>
         <details class="advanced">
           <summary>Advanced</summary>
-          <p class="hint">For a browser you set up by hand, use this as its automatic proxy (PAC) address:</p>
+          <p class="hint">Tailfuse sets this as your Mac’s automatic proxy (PAC) address. For an app that ignores the system setting, enter it there by hand:</p>
           <p><code id="pac-url"></code></p>
-          <button type="button" class="btn btn--secondary btn--sm" id="proxy-remove">Stop sending my browsers to Tailfuse</button>
+          <button type="button" class="btn btn--secondary btn--sm" id="proxy-remove">Remove the system proxy setting</button>
         </details>
       </section>
     </div>
+
+    <dialog id="permission" class="dialog" aria-labelledby="permission-title">
+      <form method="dialog" class="dialog-body">
+        <svg class="dialog-mark" viewBox="120 146 272 220" width="40" height="32" aria-hidden="true"><circle cx="150" cy="176" r="27" fill="#eff0f1"/><circle cx="150" cy="256" r="27" fill="#eff0f1"/><circle cx="150" cy="336" r="27" fill="#eff0f1"/><circle cx="214" cy="176" r="27" fill="#eff0f1"/><circle cx="214" cy="336" r="27" fill="#eff0f1"/><circle cx="298" cy="176" r="27" fill="#ff4a1f"/><circle cx="362" cy="176" r="27" fill="#ff4a1f"/><circle cx="298" cy="336" r="27" fill="#ff4a1f"/><circle cx="362" cy="256" r="27" fill="#ff4a1f"/><circle cx="362" cy="336" r="27" fill="#ff4a1f"/><rect x="191" y="229" width="130" height="54" rx="27" fill="#ff4a1f"/></svg>
+        <h2 id="permission-title">Tailfuse needs your permission</h2>
+        <p>To reach your tailnets, Tailfuse sets your Mac’s system proxy. Apps that follow the system setting, including your browsers, then send tailnet addresses through Tailfuse and everything else directly.</p>
+        <p class="hint">macOS will ask for your password next. You only do this once.</p>
+        <div class="dialog-actions">
+          <button value="later" class="btn btn--secondary btn--sm">Not now</button>
+          <button value="ok" class="btn btn--primary btn--sm" autofocus>OK</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="main.js"></script>
   </body>

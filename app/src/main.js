@@ -90,8 +90,8 @@ function statusLine(s) {
   const broken = s.profiles.filter((p) => p.error);
   if (broken.length) return `${broken[0].name} has a problem. See the note beside it.`;
   if (waiting.length) return `Sign in to ${waiting.map((p) => p.name).join(" and ")} to bring ${waiting.length === 1 ? "it" : "them"} online.`;
-  if (s.proxy_problem) return `${plural(online, "tailnet")} online. One more step before your browser can reach ${online === 1 ? "it" : "them"}.`;
-  return `${plural(online, "tailnet")} online. Open any of their addresses in your browser as usual.`;
+  if (s.proxy_problem) return `${plural(online, "tailnet")} online. One more step before your apps can reach ${online === 1 ? "it" : "them"}.`;
+  return `${plural(online, "tailnet")} online. Open any of their addresses as usual.`;
 }
 
 let lastState = null;
@@ -149,7 +149,7 @@ function render(s) {
   const needsYou = s.proxy_problem === "permission";
   $("#proxy-fix").hidden = !needsYou;
   $("#proxy-why").textContent = needsYou
-    ? "Your tailnets are online, but your browsers don't know to use Tailfuse yet. macOS asks for your password once to allow it."
+    ? "Your tailnets are online, but your Mac isn't sending their addresses through Tailfuse yet. Allow Tailfuse to set the system proxy; macOS asks for your password once."
     : `${sentence(s.proxy_problem || "")} You can still set it by hand: see Advanced, under Settings.`;
   $("#pac-url").textContent = s.pac_url;
 
@@ -180,9 +180,39 @@ function render(s) {
   $("#show-add-tunnel").disabled = count === 0;
 }
 
+// The system proxy needs an administrator. Explain first in the window; only after OK does
+// macOS show its own password prompt. Asked once per launch on its own; the notice's Allow
+// button asks again whenever.
+let askedThisLaunch = false;
+async function askPermission() {
+  const dialog = $("#permission");
+  if (dialog.open) return;
+  dialog.returnValue = "";
+  dialog.showModal();
+  const answer = await new Promise((resolve) => dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true }));
+  if (answer !== "ok") return;
+  $("#proxy-fix").disabled = true;
+  try {
+    await call("connect_browsers");
+  } catch {
+    // the error line already says why
+  }
+  $("#proxy-fix").disabled = false;
+  refresh();
+}
+
+function maybeAskPermission(s) {
+  if (s.up && s.proxy_problem === "permission" && !askedThisLaunch) {
+    askedThisLaunch = true;
+    askPermission();
+  }
+}
+
 async function refresh() {
   try {
-    render(await invoke("get_state"));
+    const s = await invoke("get_state");
+    render(s);
+    maybeAskPermission(s);
   } catch (err) {
     showError(err);
   }
@@ -218,9 +248,10 @@ if (!invoke) {
     if (target.dataset.close) return toggleForm(target.dataset.close, false);
     if (target.id === "error-close") return void ($("#error").hidden = true);
 
-    if (target.id === "proxy-fix" || target.id === "proxy-remove") {
+    if (target.id === "proxy-fix") return askPermission();
+    if (target.id === "proxy-remove") {
       target.disabled = true;
-      await call(target.id === "proxy-fix" ? "connect_browsers" : "disconnect_browsers").catch(() => {});
+      await call("disconnect_browsers").catch(() => {});
       target.disabled = false;
       return refresh();
     }
@@ -333,7 +364,7 @@ if (!invoke) {
       const owner = String(answer).match(/profile "([^"]+)"/);
       out.textContent = owner
         ? `${host} goes to ${owner[1]}.`
-        : `${host} is on none of your tailnets. Tailfuse refuses it, and your browser reaches it directly.`;
+        : `${host} is on none of your tailnets. Tailfuse leaves it alone, and your apps reach it directly.`;
     } catch (err) {
       out.textContent = sentence(err);
     }

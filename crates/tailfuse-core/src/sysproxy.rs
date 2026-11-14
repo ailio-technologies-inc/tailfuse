@@ -98,7 +98,7 @@ end run"#;
         }
         check_free(&svc, &url)?;
         as_admin(
-            "Tailfuse wants to send your browsers to your tailnets.",
+            "Tailfuse wants to set this Mac’s system proxy so your apps can reach your tailnets.",
             &svc,
             pac_url,
             "on",
@@ -132,7 +132,7 @@ end run"#;
             return Ok(());
         }
         as_admin(
-            "Tailfuse wants to stop sending your browsers to your tailnets.",
+            "Tailfuse wants to remove its system proxy setting.",
             &svc,
             " ",
             "off",

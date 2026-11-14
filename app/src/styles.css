@@ -203,3 +203,13 @@ code:empty { display: none; }
   .entry { flex-wrap: wrap; }
   .entry-actions { width: 100%; padding-left: 21px; }
 }
+
+/* the permission popup, before macOS's own password prompt */
+.dialog { width: min(440px, calc(100vw - 40px)); padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--card); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); }
+.dialog::backdrop { background: rgba(8, 9, 10, .6); }
+.dialog-body { display: grid; gap: 10px; padding: 24px; }
+.dialog-mark { margin-bottom: 4px; }
+.dialog h2 { font-size: 19px; letter-spacing: -0.02em; }
+.dialog p { font-size: var(--t-small); line-height: 1.5; color: var(--muted); }
+.dialog .hint { font-size: var(--t-label); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
