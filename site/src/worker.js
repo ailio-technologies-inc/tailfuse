@@ -296,21 +296,54 @@ function platformFromUserAgent(ua) {
   return null;
 }
 
-async function latestAssets(ctx) {
-  const api = `https://api.github.com/repos/${REPO}/releases/latest`;
+// The recent release tags, newest first, from the public releases feed: unlike the REST API (60 calls an
+// hour per address without a token, which a Worker's shared addresses run out of) it isn't rate-limited.
+async function recentTags(ctx) {
+  const feed = `https://github.com/${REPO}/releases.atom`;
   const cache = caches.default;
-  let res = await cache.match(api);
+  let res = await cache.match(feed);
   if (!res) {
-    res = await fetch(api, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'tailfuse-site' } });
+    res = await fetch(feed, { headers: { 'user-agent': 'tailfuse-site' } });
     if (!res.ok) return [];
-    res = new Response(res.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' } });
-    ctx.waitUntil(cache.put(api, res.clone()));
+    res = new Response(res.body, { headers: { 'content-type': 'application/atom+xml', 'cache-control': 'public, max-age=120' } });
+    ctx.waitUntil(cache.put(feed, res.clone()));
   }
-  const release = await res.json().catch(() => null);
-  return Array.isArray(release?.assets) ? release.assets : [];
+  const xml = await res.text();
+  const tags = [...xml.matchAll(/\/releases\/tag\/(v[0-9][^"<]*)/g)].map((m) => m[1]);
+  return [...new Set(tags)].slice(0, 8);
 }
 
-// An asset the release does not hold (or a platform with no build) lands on the release page.
+// Whether GitHub holds a release file (it answers a download with a redirect to its file host).
+async function released(url) {
+  const res = await fetch(url, { method: 'HEAD', redirect: 'manual', headers: { 'user-agent': 'tailfuse-site' } });
+  return res.status === 302 || res.status === 200;
+}
+
+// The file from the newest release that holds it: a release is published as soon as its first lane runs,
+// so the newest one can still be missing files while the others build. Suffixes are tried in order of
+// preference across releases, so macOS takes the notarized zip of a slightly older release over the ad-hoc
+// dmg of one still being notarized. The answer is cached for two minutes.
+async function newestFile(ctx, prefix, suffixes) {
+  const key = `https://tailfuse.com/__download/${prefix}${suffixes.join('|')}`;
+  const cache = caches.default;
+  const hit = await cache.match(key);
+  if (hit) return (await hit.text()) || null;
+  const tags = await recentTags(ctx);
+  let found = '';
+  search: for (const sfx of suffixes) {
+    for (const tag of tags) {
+      const url = `https://github.com/${REPO}/releases/download/${tag}/${prefix}${tag}${sfx}`;
+      if (await released(url).catch(() => false)) {
+        found = url;
+        break search;
+      }
+    }
+  }
+  if (tags.length) ctx.waitUntil(cache.put(key, new Response(found, { headers: { 'cache-control': 'public, max-age=120' } })));
+  return found || null;
+}
+
+// Only a platform with no build at all, or no recent release holding its file, lands on the release page.
 async function download(request, url, ctx) {
   const [kind, platform] = url.pathname.replace(/^\/download\/?/, '').split('/');
   let prefix = 'tailfuse-app-';
@@ -318,20 +351,16 @@ async function download(request, url, ctx) {
   if (!kind) suffix = APP_SUFFIX[platformFromUserAgent(request.headers.get('user-agent') ?? '')];
   else if (kind === 'app') suffix = APP_SUFFIX[platform];
   else if (kind === 'cli') {
-    prefix = 'tailfuse-v';
+    prefix = 'tailfuse-';
     suffix = CLI_SUFFIX[platform];
   }
   if (!suffix) return Response.redirect(RELEASES, 302);
-  const assets = await latestAssets(ctx).catch(() => []);
-  const suffixes = Array.isArray(suffix) ? suffix : [suffix];
-  const asset = suffixes
-    .map((sfx) => assets.find((a) => typeof a.name === 'string' && a.name.startsWith(prefix) && a.name.endsWith(sfx)))
-    .find(Boolean);
-  if (!asset?.browser_download_url) return Response.redirect(RELEASES, 302);
+  const file = await newestFile(ctx, prefix, Array.isArray(suffix) ? suffix : [suffix]).catch(() => null);
+  if (!file) return Response.redirect(RELEASES, 302);
   // Straight to the file on GitHub's download servers: the browser saves it at once, the visitor never sees
   // the releases page, and Chrome's Safe Browsing trusts GitHub's file host far more than a new domain
   // relaying the bytes (relayed through tailfuse.com, a brand-new download was blocked as "suspicious").
-  return Response.redirect(asset.browser_download_url, 302);
+  return Response.redirect(file, 302);
 }
 
 // Measurement consent, ailio.ca's model (ailio.ca repo, apps/ailio/src/consent.ts), for Google Analytics only:
