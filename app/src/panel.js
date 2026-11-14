@@ -38,11 +38,20 @@ async function refresh() {
     dot.className = `dot ${p.online ? "on" : ""}`;
     const main = document.createElement("div");
     main.className = "row-main";
+    // The account a tailnet signed in with is what people recognise it by;
+    // the profile name moves to the second line with its state.
     const name = document.createElement("strong");
-    name.textContent = p.name;
+    name.textContent = p.account || p.name;
+    name.title = p.account || p.name;
+    const status = p.online ? (p.ips?.[0] || "Connected") : p.paused ? "Disconnected" : s.up ? "Sign-in needed" : "Off";
     const sub = document.createElement("span");
-    sub.className = "mono";
-    sub.textContent = p.online ? (p.account || p.suffixes.join("  ")) : p.paused ? "Disconnected" : s.up ? "Sign-in needed" : "Off";
+    sub.className = "row-sub";
+    const label = document.createElement("span");
+    label.textContent = p.account ? p.name : (p.suffixes[0] || "").replace(/^\./, "");
+    const stateEl = document.createElement("span");
+    stateEl.className = `row-state ${p.online ? "on" : ""}`;
+    stateEl.textContent = status;
+    sub.append(...[label.textContent && label, stateEl].filter(Boolean));
     main.append(name, sub);
     li.append(dot, main);
     if (s.up && !p.online && !p.paused) {

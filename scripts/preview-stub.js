@@ -10,9 +10,9 @@ const state = shot ? {
   license: "licensed to you@example.com",
   licensed_to: "you@example.com",
   profiles: [
-    { name: "home-lab", suffixes: [".home-lab.ts.net"], online: true, hostname: "studio-mac", ips: ["100.101.14.9"], error: "" },
-    { name: "work", suffixes: [".work.ts.net", ".internal.example"], online: true, hostname: "studio-mac-work", ips: ["100.72.203.51"], error: "" },
-    { name: "client-acme", suffixes: [".acme-corp.ts.net"], online: false, paused: true, hostname: "", ips: [], error: "" },
+    { name: "home-lab", account: "you@gmail.com", suffixes: [".home-lab.ts.net"], online: true, hostname: "studio-mac", ips: ["100.101.14.9"], error: "" },
+    { name: "work", account: "you@example.com", suffixes: [".work.ts.net", ".internal.example"], online: true, hostname: "studio-mac-work", ips: ["100.72.203.51"], error: "" },
+    { name: "client-acme", account: "you@acme-corp.com", suffixes: [".acme-corp.ts.net"], online: false, paused: true, hostname: "", ips: [], error: "" },
   ],
   proxy_problem: "",
   tailscale_app: null,

@@ -91,7 +91,12 @@ body {
 .dot.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 20%, transparent); }
 
 .row-main { display: grid; gap: 0; flex: 1; min-width: 0; text-align: left; }
-.row-main strong { font-size: 13px; font-weight: 500; }
+.row-main strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-sub { display: flex; gap: 6px; align-items: baseline; min-width: 0; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.row-sub > span { overflow: hidden; text-overflow: ellipsis; }
+.row-sub > span + span::before { content: "·"; margin-right: 6px; color: var(--line-strong); }
+.row-state { font-family: var(--font-mono); font-size: 10.5px; flex: none; }
+.row-state.on { color: var(--ok); }
 .mono { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted { color: var(--muted); font-size: 11px; }
 
@@ -103,7 +108,8 @@ body {
   padding: 10px 12px 12px;
   border-top: 1px solid var(--line);
 }
-.p-foot .btn { flex: 1; }
+.p-foot #open { flex: 1; }
+.p-foot #quit { flex: none; padding-inline: 18px; }
 .btn.btn--ghost { background: transparent; border-color: transparent; color: var(--muted); }
 .btn.btn--ghost:hover { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 40%, transparent); }
 .btn { height: var(--btn-h-sm); }
