@@ -99,6 +99,24 @@ cd app && npm install && npm run tauri dev   # develop
 npm run tauri build                          # signed bundle (dmg/msi/appimage)
 ```
 
+### Release builds (macOS)
+
+Every build is signed with the Developer ID identity and the hardened
+runtime. A build that other Macs open without a Gatekeeper warning also
+needs notarization, which is a release-time env step (the credentials never
+live in the repo):
+
+```sh
+APPLE_ID=you@example.com \
+APPLE_PASSWORD=<app-specific password from appleid.apple.com> \
+APPLE_TEAM_ID=N7TM93NL4Q \
+npm run tauri build -- --config '{"bundle":{"macOS":{"notarize":true}}}'
+```
+
+One-time, on the build machine, the password can live in the keychain instead:
+`xcrun notarytool store-credentials tailfuse --apple-id … --team-id N7TM93NL4Q --password …`,
+then `APPLE_PASSWORD=@keychain:tailfuse`.
+
 ## Repo layout
 
 | Path | What |
