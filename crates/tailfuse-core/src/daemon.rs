@@ -185,6 +185,28 @@ impl DaemonSet {
 
             // Apply prefs now if the profile is already authenticated.
             let _ = apply_profile_prefs(name, prof, &socket).await;
+            // A tailnet the switch has turned off stays off: a signed-in node
+            // would otherwise reconnect on every spawn, dragging every
+            // tailnet up whenever one of them connects. Wait until the daemon
+            // answers, then hold it down in the background.
+            if !prof.connected {
+                let socket = socket.clone();
+                let name = name.clone();
+                tokio::spawn(async move {
+                    for _ in 0..20 {
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        if tailscale_cli(&socket, &["status", "--json"]).await.is_ok() {
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(10),
+                                tailscale_cli(&socket, &["down"]),
+                            )
+                            .await;
+                            tracing::info!(profile = name, "held disconnected (switch off)");
+                            break;
+                        }
+                    }
+                });
+            }
             tracing::info!(profile = name, %socks_port, "tailscaled started (userspace mode)");
         }
         Ok(set)

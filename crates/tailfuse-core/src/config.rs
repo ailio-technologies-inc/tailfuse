@@ -42,7 +42,26 @@ fn default_listen() -> String {
     DEFAULT_ROUTER_LISTEN.to_string()
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+fn default_true() -> bool {
+    true
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        Self {
+            suffixes: Vec::new(),
+            accept_routes: false,
+            exit_node: String::new(),
+            auth_key: String::new(),
+            connected: true,
+            ephemeral: false,
+            account: String::new(),
+            tailscale_logs: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Profile {
     /// Hostname suffixes this profile owns (e.g. `.work.ts.net`).
     #[serde(default)]
@@ -56,6 +75,12 @@ pub struct Profile {
     /// Tailscale auth key for unattended login.
     #[serde(default)]
     pub auth_key: String,
+    /// Whether this tailnet connects when Tailfuse starts. A signed-in node
+    /// reconnects on every daemon spawn (tailscaled keeps WantRunning once a
+    /// node has been up), so the per-tailnet switch's choice lives here and
+    /// is enforced at spawn: connecting one tailnet never drags the others up.
+    #[serde(default = "default_true")]
+    pub connected: bool,
     #[serde(default)]
     pub ephemeral: bool,
     /// The login this tailnet was signed in with (shown in the app).
@@ -357,6 +382,25 @@ mod tests {
             },
         );
         assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn connected_defaults_true_and_roundtrips() {
+        let mut c = Config::default();
+        c.profiles.insert(
+            "work".into(),
+            serde_saphyr::from_str("suffixes: [.work.ts.net]").unwrap(),
+        );
+        assert!(
+            c.profiles["work"].connected,
+            "existing profiles keep connecting"
+        );
+        c.profiles.get_mut("work").unwrap().connected = false;
+        let back: Config = serde_saphyr::from_str(&serde_saphyr::to_string(&c).unwrap()).unwrap();
+        assert!(
+            !back.profiles["work"].connected,
+            "the switch choice persists"
+        );
     }
 
     #[test]

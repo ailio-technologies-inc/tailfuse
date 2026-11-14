@@ -720,6 +720,15 @@ async fn set_tailnet(
         }
         Err(e) => return Err(format!("{e:#}")),
     }
+    // Remember the choice so starting Tailfuse (or connecting another
+    // tailnet) keeps this one the way the switch left it.
+    {
+        let mut cfg = state.cfg.lock().await;
+        if let Some(prof) = cfg.profiles.get_mut(&name) {
+            prof.connected = on;
+            let _ = cfg.save(&state.cfg_path);
+        }
+    }
     refresh_tray(&app);
     Ok(())
 }
