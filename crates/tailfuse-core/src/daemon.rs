@@ -542,6 +542,7 @@ async fn stop_orphans(socket: &Path) {
 /// True when a `ps` command line runs with exactly this `--socket` value (the
 /// path is followed by a space or ends the line, so `a.sock` never matches
 /// `a.sock2`).
+#[cfg_attr(not(unix), allow(dead_code))]
 fn orphan_matches(line: &str, needle: &str) -> bool {
     line.match_indices(needle)
         .any(|(i, _)| matches!(line[i + needle.len()..].chars().next(), None | Some(' ')))
