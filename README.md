@@ -23,7 +23,7 @@ Two full daemons fight over routes, `/etc/resolv.conf`, and firewall rules. tail
 ## Install
 
 ```sh
-brew install ailio-technologies-inc/tap/tailfuse   # macOS
+brew install --cask ailio-technologies-inc/tap/tailfuse   # macOS: the menu-bar app
 winget install ailio-technologies-inc.tailfuse      # Windows
 # or: cargo install --git https://github.com/ailio-technologies-inc/tailfuse tailfuse-cli
 ```
