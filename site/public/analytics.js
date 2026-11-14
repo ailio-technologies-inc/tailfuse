@@ -1,7 +1,8 @@
 // Google Analytics for tailfuse.com, loaded only with the visitor's consent.
 // The measurement id is public by design (Terraform output); the choice is
 // remembered in localStorage. Mirrors dagpeek's site.js, without the server
-// consent endpoint: a self-contained banner, Allow/Decline.
+// consent endpoint: a self-contained banner,
+// worded and laid out like ailio.ca's (No / Allow).
 (function () {
   'use strict';
 
@@ -40,14 +41,19 @@
   }
   if (choice === 'decline') return;
 
+  // The same bar and words as ailio.ca and the other Ailio sites: No / Allow.
   var banner = document.createElement('div');
-  banner.setAttribute('role', 'dialog');
-  banner.setAttribute('aria-label', 'Analytics consent');
+  banner.className = 'consent';
+  banner.setAttribute('role', 'region');
+  banner.setAttribute('aria-label', 'Measurement');
   banner.innerHTML =
-    '<p>Allow anonymous usage statistics? Nothing identifying leaves this page.</p>' +
-    '<button type="button" data-consent="allow">Allow</button>' +
-    '<button type="button" data-consent="decline">Decline</button>';
-  document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(banner); });
+    '<p>This website uses cookies to ensure you get the best experience on our website. <a href="/privacy">Privacy</a></p>' +
+    '<div class="choices">' +
+    '<button type="button" data-consent="decline">No</button>' +
+    '<button type="button" class="primary" data-consent="allow">Allow</button>' +
+    '</div>';
+  var show = function () { document.body.appendChild(banner); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
 
   banner.addEventListener('click', function (event) {
     var pick = event.target.getAttribute && event.target.getAttribute('data-consent');

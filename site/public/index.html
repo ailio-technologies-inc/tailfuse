@@ -145,7 +145,15 @@
 <p class="lead">Tailfuse is a menu-bar app for macOS, Windows and Linux. It runs one Tailscale node per tailnet and sends each hostname to the tailnet that owns it.</p>
 <div class="hero__actions">
 <a class="btn" href="/download">Download Tailfuse</a>
-<button class="btn btn--quiet btn--ai" type="button" id="ai-setup" aria-describedby="ai-setup-note"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg><span>Set up with AI</span></button>
+<div class="setup-split" id="setup-split">
+<button class="btn btn--quiet btn--ai setup-split__main" type="button" id="ai-setup" aria-describedby="ai-setup-note"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg><span>Set up with AI</span></button>
+<button class="btn btn--quiet setup-split__toggle" type="button" id="setup-toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="setup-menu" aria-label="More ways to set up"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+<div class="setup-split__menu" id="setup-menu" role="menu" hidden>
+<button type="button" role="menuitem" data-setup="ai"><strong>Set up with AI</strong><span>Copy a prompt for Claude, ChatGPT or Cursor</span></button>
+<a role="menuitem" href="#cli" data-setup="manual"><strong>Set up manually</strong><span>The config file and the commands, step by step</span></a>
+<button type="button" role="menuitem" data-setup="brew"><strong>Copy the Homebrew command</strong><span><code>brew install --cask ailio-technologies-inc/tap/tailfuse</code></span></button>
+</div>
+</div>
 </div>
 <p class="hero__note" id="ai-setup-note" role="status">Copies a setup prompt for Claude, ChatGPT or Cursor.</p>
 <textarea class="ai-prompt" id="ai-prompt" readonly hidden aria-label="Tailfuse setup prompt">Set up Tailfuse on this computer for me. Tailfuse keeps several Tailscale tailnets online at once and sends each hostname to the tailnet that owns it. Read https://tailfuse.com/llms.txt first and follow it.

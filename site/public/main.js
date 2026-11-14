@@ -272,34 +272,78 @@
   }
 })();
 
-// "Set up with AI": copies a setup prompt for an AI assistant. If the clipboard is refused, the prompt is shown,
-// selected, for a manual copy.
+// "Set up with AI": the split button copies a setup prompt for an AI assistant; its menu also offers manual setup
+// (the command-line section) and the Homebrew command. If the clipboard is refused, the prompt is shown, selected.
 (function () {
   'use strict';
   var btn = document.getElementById('ai-setup');
   var box = document.getElementById('ai-prompt');
   var note = document.getElementById('ai-setup-note');
+  var toggle = document.getElementById('setup-toggle');
+  var menu = document.getElementById('setup-menu');
   if (!btn || !box || !note) return;
   var label = btn.querySelector('span');
   var idle = note.textContent;
   var timer = 0;
-  var done = function () {
-    label.textContent = 'Prompt copied';
-    note.textContent = 'Paste it into Claude, ChatGPT or Cursor. It walks you through the setup.';
+  var later = function () {
     window.clearTimeout(timer);
     timer = window.setTimeout(function () { label.textContent = 'Set up with AI'; note.textContent = idle; }, 4000);
   };
-  var show = function () {
-    box.hidden = false;
-    box.focus();
-    box.select();
-    note.textContent = 'Copy this prompt into your AI assistant.';
+  var copy = function (text, ok, fail) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, fail);
+    else fail();
   };
-  btn.addEventListener('click', function () {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(box.value).then(done, show);
-    } else {
-      show();
+  var copyPrompt = function () {
+    copy(box.value, function () {
+      label.textContent = 'Prompt copied';
+      note.textContent = 'Paste it into Claude, ChatGPT or Cursor. It walks you through the setup.';
+      later();
+    }, function () {
+      box.hidden = false;
+      box.focus();
+      box.select();
+      note.textContent = 'Copy this prompt into your AI assistant.';
+    });
+  };
+  btn.addEventListener('click', copyPrompt);
+
+  if (!toggle || !menu) return;
+  var items = function () { return Array.prototype.slice.call(menu.querySelectorAll('[role="menuitem"]')); };
+  var open = function (focusFirst) {
+    menu.hidden = false;
+    toggle.setAttribute('aria-expanded', 'true');
+    if (focusFirst) items()[0].focus();
+  };
+  var close = function (refocus) {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+    if (refocus) toggle.focus();
+  };
+  toggle.addEventListener('click', function () { if (menu.hidden) open(false); else close(false); });
+  toggle.addEventListener('keydown', function (e) { if (e.key === 'ArrowDown') { e.preventDefault(); open(true); } });
+  menu.addEventListener('keydown', function (e) {
+    var list = items();
+    var i = list.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); close(true); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+  });
+  document.addEventListener('click', function (e) {
+    if (!menu.hidden && !e.target.closest('#setup-split')) close(false);
+  });
+  menu.addEventListener('click', function (e) {
+    var item = e.target.closest('[data-setup]');
+    if (!item) return;
+    var kind = item.getAttribute('data-setup');
+    close(false);
+    if (kind === 'ai') copyPrompt();
+    if (kind === 'brew') {
+      copy('brew install --cask ailio-technologies-inc/tap/tailfuse', function () {
+        note.textContent = 'Homebrew command copied. Paste it into Terminal.';
+        later();
+      }, function () { note.textContent = 'brew install --cask ailio-technologies-inc/tap/tailfuse'; });
     }
+    // "manual" is a plain link to the command-line section.
   });
 })();
