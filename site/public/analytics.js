@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var ID = 'G-XXXXXXXXXX'; // tailfuse_ga4_measurement_id (Terraform); filled after the apply.
+  var ID = 'G-B598JDM8JW'; // tailfuse_ga4_measurement_id (Terraform output); public by design.
   var KEY = 'tailfuse-consent';
 
   function start() {
