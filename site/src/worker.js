@@ -9,6 +9,7 @@
 //   LICENSE_PRIVKEY    base64url Ed25519 private key, the `private:` line of `licgen --gen-keys`.
 //                      Its public half is PUBKEY in crates/tailfuse-core/src/license.rs.
 //   STRIPE_SECRET_KEY  Stripe secret or restricted key (Checkout Sessions: write).
+// Local runs only (.dev.vars): SITE_ORIGIN, the dev server's own address.
 
 const MAX_DONATION_USD = 1000;
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
@@ -70,6 +71,13 @@ async function stripe(env, path, params) {
   });
   const body = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, body };
+}
+
+// Where Stripe sends the donor back to: the public site. wrangler dev rewrites the request host to
+// the route's, so a local run sets SITE_ORIGIN=http://localhost:<port> in .dev.vars instead.
+function siteOrigin(env, url) {
+  if (env.SITE_ORIGIN) return String(env.SITE_ORIGIN).replace(/\/+$/, '');
+  return url.hostname === 'tailfuse.com' ? 'https://tailfuse.com' : url.origin;
 }
 
 // POST /api/license {email, amount}: amount is whole US dollars. 0 returns {key}; more returns {url}.
@@ -195,7 +203,7 @@ export default {
         if (url.pathname === '/api/status' && request.method === 'GET') {
           return json({ licenses: Boolean(env.LICENSE_PRIVKEY), donations: Boolean(env.LICENSE_PRIVKEY && env.STRIPE_SECRET_KEY) });
         }
-        if (url.pathname === '/api/license' && request.method === 'POST') return await requestLicense(request, env, url.origin);
+        if (url.pathname === '/api/license' && request.method === 'POST') return await requestLicense(request, env, siteOrigin(env, url));
         if (url.pathname === '/api/license' && request.method === 'GET') return await claimLicense(url, env);
         return json({ error: 'Not found.' }, 404);
       } catch (err) {
