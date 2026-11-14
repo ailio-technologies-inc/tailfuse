@@ -10,6 +10,7 @@
 //                      Its public half is PUBKEY in crates/tailfuse-core/src/license.rs.
 //   STRIPE_SECRET_KEY  Stripe secret or restricted key (Checkout Sessions: write).
 // Local runs only (.dev.vars): SITE_ORIGIN, the dev server's own address.
+// Binding: EMAIL (send_email), used to email a donor their key from license@tailfuse.com.
 
 const MAX_DONATION_USD = 1000;
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
@@ -60,6 +61,55 @@ export async function signLicense(privkey, email, issuedAt) {
   return `tailfuse_${b64urlEncode(payload)}__${b64urlEncode(signature)}`;
 }
 
+const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+// Emails a donor their key. A failed send never blocks the key itself: the page still shows it.
+async function emailKey(env, email, key, updatesUntil) {
+  if (!env.EMAIL) return false;
+  const text = [
+    'Thank you for donating to Tailfuse.',
+    '',
+    'Your license key:',
+    '',
+    key,
+    '',
+    'To use it, open Tailfuse and paste the key into the License field, or run:',
+    '',
+    '  tailfuse license activate <key>',
+    '',
+    `The key is issued to ${email} and covers updates until ${updatesUntil}. The version you have keeps working after that.`,
+    'It is verified on your machine: no account and no phone-home.',
+    '',
+    'Questions? Reply to this email.',
+    '',
+    'Tailfuse, https://tailfuse.com',
+  ].join('\n');
+  const html = `<div style="font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 16px; line-height: 1.5; color: #18191b; max-width: 600px;">
+<p>Thank you for donating to Tailfuse.</p>
+<p>Your license key:</p>
+<pre style="white-space: pre-wrap; word-break: break-all; background: #f1f1f2; border-radius: 6px; padding: 14px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;">${escapeHtml(key)}</pre>
+<p>To use it, open Tailfuse and paste the key into the License field, or run:</p>
+<pre style="background: #f1f1f2; border-radius: 6px; padding: 14px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;">tailfuse license activate &lt;key&gt;</pre>
+<p>The key is issued to ${escapeHtml(email)} and covers updates until ${escapeHtml(updatesUntil)}. The version you have keeps working after that. It is verified on your machine: no account and no phone-home.</p>
+<p>Questions? Reply to this email.</p>
+<p><a href="https://tailfuse.com" style="color: #c8340c;">tailfuse.com</a></p>
+</div>`;
+  try {
+    await env.EMAIL.send({
+      to: email,
+      from: { email: 'license@tailfuse.com', name: 'Tailfuse' },
+      replyTo: 'hello@ailio.ca',
+      subject: 'Your Tailfuse license key',
+      text,
+      html,
+    });
+    return true;
+  } catch (err) {
+    console.error('license email failed', err?.code, err?.message);
+    return false;
+  }
+}
+
 async function stripe(env, path, params) {
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
     method: params ? 'POST' : 'GET',
@@ -105,6 +155,7 @@ async function requestLicense(request, env, origin) {
     'line_items[0][price_data][unit_amount]': String(amount * 100),
     'line_items[0][price_data][product_data][name]': 'Tailfuse license (optional donation)',
     'metadata[product]': 'tailfuse-license',
+    'payment_intent_data[receipt_email]': email,
   });
   if (!session.ok || !session.body.url) {
     console.error('stripe checkout create failed', session.status, session.body?.error?.message);
@@ -125,8 +176,15 @@ async function claimLicense(url, env) {
   if (session.body.payment_status !== 'paid') return json({ error: 'This donation has not completed.' }, 402);
   const email = cleanEmail(session.body.customer_details?.email ?? session.body.customer_email);
   if (!email) return json({ error: 'The payment has no email address on it.' }, 422);
-  const key = await signLicense(env.LICENSE_PRIVKEY, email, new Date(session.body.created * 1000));
-  return json({ key, email });
+  const issuedAt = new Date(session.body.created * 1000);
+  const key = await signLicense(env.LICENSE_PRIVKEY, email, issuedAt);
+  // Email the key once per donation; the session's own metadata remembers that it went out.
+  let emailed = session.body.metadata?.key_emailed === '1';
+  if (!emailed) {
+    emailed = await emailKey(env, email, key, new Date(issuedAt.getTime() + YEAR_MS).toISOString().slice(0, 10));
+    if (emailed) await stripe(env, `checkout/sessions/${id}`, { 'metadata[key_emailed]': '1' }).catch(() => {});
+  }
+  return json({ key, email, emailed });
 }
 
 // Downloads redirect to the latest GitHub release asset, so GitHub serves the bytes.

@@ -109,7 +109,7 @@
       keyBox.value = data.key;
       keyEmail.textContent = data.email || '';
       result.hidden = false;
-      say('Thank you. Keep this key somewhere safe.', false);
+      say(data.emailed ? 'Thank you. The key is also on its way to ' + (data.email || 'your inbox') + '.' : 'Keep this key somewhere safe.', false);
       result.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
     };
     var api = function (path, options) {

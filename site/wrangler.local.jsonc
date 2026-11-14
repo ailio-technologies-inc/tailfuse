@@ -1,0 +1,15 @@
+{
+  // tailfuse.com: the static site in ./public, plus src/worker.js for the license API.
+  // Secrets: LICENSE_PRIVKEY and STRIPE_SECRET_KEY (see src/worker.js). EMAIL sends donors their key.
+  "name": "tailfuse-site",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "account_id": "a72eeb1e21690510bdc83c86d82e61b2",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  "send_email": [{ "name": "EMAIL", "remote": true }],
+  "observability": { "enabled": true },
+  "routes": [
+    { "pattern": "tailfuse.com", "custom_domain": true },
+    { "pattern": "www.tailfuse.com", "custom_domain": true }
+  ]
+}
