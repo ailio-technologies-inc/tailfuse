@@ -141,14 +141,15 @@ function profileEntry(p, up) {
   const [label, tone] = tailnetState(p, up);
   const ips = p.ips.filter(Boolean);
   // Hover or focus shows these in a card that floats over the list, so nothing below moves.
-  const details = [p.hostname && ["This Mac's name", p.hostname], ...ips.map((ip) => [ip.includes(":") ? "IPv6" : "IPv4", ip]), p.account && ["Account", p.account]].filter(Boolean);
+  const details = [p.hostname && ["This Mac's name", p.hostname], ...ips.map((ip) => [ip.includes(":") ? "IPv6" : "IPv4", ip]), p.account && ["Name in Tailfuse", p.name]].filter(Boolean);
   const needsSignIn = up && !p.online && !p.paused && !p.error;
   return h("li", { class: "entry entry--tailnet", tabIndex: 0 },
     h("span", { class: `dot${p.online ? " on" : ""}${p.error ? " bad" : ""}` }),
     h("div", { class: "entry-main" },
       h("div", { class: "entry-line" },
-        h("strong", null, p.name),
-        p.account && h("span", { class: "muted entry-account" }, p.account),
+        // Shown by the account it signed in with, like the menu-bar panel; the profile name follows.
+        h("strong", { title: p.account || p.name }, p.account || p.name),
+        p.account && h("span", { class: "muted entry-account" }, p.name),
       ),
       h("span", { class: "mono muted" }, p.suffixes.map((x) => `*${x}`).join("  ")),
       p.error && h("span", { class: "muted bad" }, p.error),

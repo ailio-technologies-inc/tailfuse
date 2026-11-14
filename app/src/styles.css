@@ -235,7 +235,8 @@ code:empty { display: none; }
 /* tailnet rows: short by default; details float over the list on hover, so nothing moves */
 .entry--tailnet { position: relative; padding: 10px 14px; }
 .entry-line { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.entry-line strong { flex: none; }
+.entry-line strong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry-account { flex: none; }
 .entry-account { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill-wait { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
 /* Remove keeps its space; it only fades in */
