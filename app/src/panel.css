@@ -114,5 +114,5 @@ body {
 .switch--sm .slider { position: absolute; inset: 0; cursor: pointer; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 999px; transition: background .15s ease; }
 .switch--sm .slider::before { content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; border-radius: 50%; background: var(--muted); transition: transform .15s ease, background .15s ease; }
 .switch--sm input:checked + .slider { background: var(--ok); border-color: var(--ok); }
-.switch--sm input:checked + .slider::before { transform: translateX(16px); background: #101112; }
+.switch--sm input:checked + .slider::before { transform: translateX(16px); background: #ffffff; }
 .switch--sm input:focus-visible + .slider { outline: 2px solid var(--action); outline-offset: 2px; }

@@ -148,16 +148,13 @@ impl DaemonSet {
             let socks_port = config::profile_socks_port(index);
             let state_dir = config::profile_state_dir(name);
             let socket = config::profile_socket(name);
-            std::fs::create_dir_all(&state_dir)?;
+            config::ensure_private_dir(&state_dir)?;
             if socket.exists() {
                 let _ = std::fs::remove_file(&socket);
             }
 
             let log_path = config::state_dir().join(format!("{name}.log"));
-            let log_file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_path)?;
+            let log_file = config::private_log(&log_path)?;
             let err_file = log_file.try_clone()?;
 
             let mut cmd = Command::new(&tailscaled);
@@ -510,15 +507,12 @@ async fn spawn_signin_daemon(allow_logs: bool) -> Result<Child> {
     )?;
     let state_dir = config::profile_state_dir(SIGNIN_SLOT);
     let socket = config::profile_socket(SIGNIN_SLOT);
-    std::fs::create_dir_all(&state_dir)?;
+    config::ensure_private_dir(&state_dir)?;
     if socket.exists() {
         let _ = std::fs::remove_file(&socket);
     }
     let log_path = config::state_dir().join(format!("{SIGNIN_SLOT}.log"));
-    let log_file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)?;
+    let log_file = config::private_log(&log_path)?;
     let err_file = log_file.try_clone()?;
     let mut cmd = Command::new(&tailscaled);
     cmd.args([

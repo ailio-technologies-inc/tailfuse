@@ -119,6 +119,45 @@ pub fn state_dir() -> PathBuf {
         .join("tailfuse")
 }
 
+/// Create a directory (and its parents under the state dir) readable only by
+/// this user. Each profile's node keys and control socket live in one, so no
+/// other account on the machine can read them or drive the node.
+pub fn ensure_private_dir(dir: &std::path::Path) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let root = state_dir();
+        let mut d = Some(dir);
+        while let Some(cur) = d {
+            if !cur.starts_with(&root) {
+                break;
+            }
+            let _ = std::fs::set_permissions(cur, std::fs::Permissions::from_mode(0o700));
+            d = cur.parent();
+        }
+    }
+    Ok(())
+}
+
+/// Open (append) a log file readable only by this user.
+pub fn private_log(path: &std::path::Path) -> Result<std::fs::File> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let f = opts.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(f)
+}
+
 pub fn profile_state_dir(name: &str) -> PathBuf {
     state_dir().join("profiles").join(name)
 }
@@ -141,6 +180,7 @@ pub fn load(path: &std::path::Path) -> Result<Config> {
                 cfg.router.listen = default_listen();
             }
             cfg.version = CONFIG_VERSION;
+            secrets::fill(&mut cfg);
             Ok(cfg)
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
@@ -153,10 +193,30 @@ impl Config {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let text = serde_yml::to_string(self)?;
+        // Secrets go to the OS credential store; the file keeps a marker.
+        let mut on_disk = self.clone();
+        secrets::stash(&mut on_disk);
+        let text = serde_yml::to_string(&on_disk)?;
         let tmp = path.with_extension("yaml.tmp");
-        std::fs::write(&tmp, text)?;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        {
+            use std::io::Write;
+            let mut f = opts.open(&tmp)?;
+            f.write_all(text.as_bytes())?;
+            f.sync_all()?;
+        }
         std::fs::rename(&tmp, path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
         Ok(())
     }
 
@@ -286,5 +346,75 @@ mod tests {
         let text = serde_yml::to_string(&c).unwrap();
         let back: Config = serde_yml::from_str(&text).unwrap();
         assert_eq!(back.profiles.len(), 2);
+    }
+}
+
+/// Where secrets are kept. On macOS (Keychain) and Windows (Credential
+/// Manager) the license key and auth keys are stored by the OS and the config
+/// file holds only [`secrets::MARKER`]. Elsewhere they stay in the config file,
+/// which is written readable only by this user.
+pub mod secrets {
+    use super::Config;
+
+    /// Written in the config file in place of a secret held by the OS.
+    pub const MARKER: &str = "stored-in-system-keychain";
+    #[allow(dead_code)]
+    const SERVICE: &str = "com.ailio.tailfuse";
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    fn put(account: &str, value: &str) -> bool {
+        keyring::Entry::new(SERVICE, account)
+            .and_then(|e| e.set_password(value))
+            .is_ok()
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    fn get(account: &str) -> Option<String> {
+        keyring::Entry::new(SERVICE, account)
+            .and_then(|e| e.get_password())
+            .ok()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    fn put(_account: &str, _value: &str) -> bool {
+        false
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    fn get(_account: &str) -> Option<String> {
+        None
+    }
+
+    /// True where the OS keeps Tailfuse's secrets.
+    pub fn in_keychain() -> bool {
+        cfg!(any(target_os = "macos", target_os = "windows"))
+    }
+
+    fn stash_one(account: &str, value: &mut String) {
+        if value.is_empty() || value == MARKER {
+            return;
+        }
+        if put(account, value) {
+            *value = MARKER.to_string();
+        }
+    }
+
+    fn fill_one(account: &str, value: &mut String) {
+        if value == MARKER {
+            *value = get(account).unwrap_or_default();
+        }
+    }
+
+    /// Move secrets out of a config about to be written.
+    pub fn stash(cfg: &mut Config) {
+        stash_one("license", &mut cfg.license);
+        for (name, p) in cfg.profiles.iter_mut() {
+            stash_one(&format!("authkey:{name}"), &mut p.auth_key);
+        }
+    }
+
+    /// Bring secrets back into a config just read.
+    pub fn fill(cfg: &mut Config) {
+        fill_one("license", &mut cfg.license);
+        for (name, p) in cfg.profiles.iter_mut() {
+            fill_one(&format!("authkey:{name}"), &mut p.auth_key);
+        }
     }
 }

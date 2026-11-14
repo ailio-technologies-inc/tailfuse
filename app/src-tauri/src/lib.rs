@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tailfuse_core::config::{self, Config, Profile, Tunnel};
 use tailfuse_core::{daemon, license, router, sysproxy};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_notification::NotificationExt;
@@ -241,17 +241,23 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
         }
     }
     for name in cfg.profiles.keys() {
-        let online = stats.iter().any(|s| s.name == *name && s.online);
-        let label = if online {
-            format!("● {name}")
-        } else if is_up {
-            format!("○ {name} — Sign in…")
+        let st = stats.iter().find(|s| s.name == *name);
+        let online = st.map(|s| s.online).unwrap_or(false);
+        let paused = st.map(|s| s.paused).unwrap_or(false);
+        let label = if !is_up || online || paused {
+            name.clone()
         } else {
-            format!("○ {name}")
+            format!("{name} — Sign in…")
         };
-        if let Ok(item) =
-            MenuItem::with_id(app, format!("profile-{name}"), label, true, None::<&str>)
-        {
+        // A checkmark means connected; choosing it connects or disconnects.
+        if let Ok(item) = CheckMenuItem::with_id(
+            app,
+            format!("profile-{name}"),
+            label,
+            true,
+            online,
+            None::<&str>,
+        ) {
             items.push(Box::new(item));
         }
     }
@@ -859,6 +865,8 @@ fn show_main_window(app: &AppHandle) {
 
 /// Toggle the custom menu-bar panel: position it under the tray icon, show
 /// and focus it — or hide it when it is open.
+// The custom popover panel; the menu-bar icon opens the native menu instead.
+#[allow(dead_code)]
 fn toggle_panel(app: &AppHandle) {
     let Some(panel) = app.get_webview_window("panel") else {
         return;
@@ -910,7 +918,7 @@ fn build_tray(app: &AppHandle) -> Result<()> {
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-36.png"))?;
     let builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(true)
         .tooltip("Tailfuse")
         .icon(icon)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -953,56 +961,55 @@ fn build_tray(app: &AppHandle) -> Result<()> {
                     let state = Arc::clone(&state);
                     let app = AppHandle::clone(app);
                     tauri::async_runtime::spawn(async move {
-                        let online = {
-                            let running = state.running.lock().await;
-                            match running.as_ref() {
-                                Some(r) => r
-                                    .daemons
-                                    .status()
-                                    .await
-                                    .iter()
-                                    .any(|s| s.name == name && s.online),
-                                None => false,
-                            }
-                        };
-                        if online {
-                            show_main_window(&app);
-                            return;
-                        }
-                        // Logged out: start if needed and run the browser login.
-                        let res = async {
-                            start_inner(&state).await?;
-                            let cfg = state.cfg.lock().await.clone();
-                            let url = daemon::login_start(&cfg, &name)
+                        let st = match state.running.lock().await.as_ref() {
+                            Some(r) => r
+                                .daemons
+                                .status()
                                 .await
-                                .map_err(|e| e.to_string())?;
-                            if let Some(u) = url {
-                                let _ = app.opener().open_url(&u, None::<&str>);
-                                daemon::login_wait(&name).await.map_err(|e| e.to_string())?;
+                                .into_iter()
+                                .find(|s| s.name == name),
+                            None => None,
+                        };
+                        let online = st.as_ref().map(|s| s.online).unwrap_or(false);
+                        let paused = st.as_ref().map(|s| s.paused).unwrap_or(false);
+                        let res = async {
+                            if online {
+                                // Connected: disconnect it.
+                                daemon::set_connected(&name, false)
+                                    .await
+                                    .map_err(|e| format!("{e:#}"))
+                            } else {
+                                start_inner(&state).await?;
+                                if paused {
+                                    daemon::set_connected(&name, true)
+                                        .await
+                                        .map_err(|e| format!("{e:#}"))
+                                } else {
+                                    // Never signed in (or signed out): run the browser sign-in.
+                                    let cfg = state.cfg.lock().await.clone();
+                                    if let Some(u) = daemon::login_start(&cfg, &name)
+                                        .await
+                                        .map_err(|e| e.to_string())?
+                                    {
+                                        let _ = app.opener().open_url(&u, None::<&str>);
+                                        daemon::login_wait(&name)
+                                            .await
+                                            .map_err(|e| e.to_string())?;
+                                    }
+                                    Ok(())
+                                }
                             }
-                            Ok::<_, String>(())
                         }
                         .await;
                         if let Err(e) = res {
-                            tracing::warn!(profile = %name, "tray login: {e}");
+                            tracing::warn!(profile = %name, "tray: {e}");
+                            notify(&app, &format!("Tailfuse could not change {name}"), &e);
                         }
                         refresh_tray(&app);
                     });
                 }
             }
             _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                // Left click: the custom panel. The native menu stays on
-                // right click.
-                toggle_panel(tray.app_handle());
-            }
         });
     let _tray = builder.build(app)?;
     Ok(())
@@ -1012,6 +1019,13 @@ fn build_tray(app: &AppHandle) -> Result<()> {
 pub fn run() {
     let cfg_path = config::default_config_path();
     let cfg = config::load(&cfg_path).unwrap_or_default();
+    // Rewrite the config once at launch: it becomes private to this user, and
+    // any key still written in it moves into the system keychain.
+    if cfg_path.exists() {
+        if let Err(e) = cfg.save(&cfg_path) {
+            tracing::warn!("securing the config: {e:#}");
+        }
+    }
     // Nothing set up yet: open the window so a first launch shows where to begin.
     let first_run = cfg.profiles.is_empty();
 

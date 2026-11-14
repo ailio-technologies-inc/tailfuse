@@ -447,10 +447,20 @@ mod tests {
         s.write_all(b"GET /tailfuse.pac HTTP/1.1\r\nHost: x\r\n\r\n")
             .await
             .unwrap();
+        // The reply can arrive in more than one read: collect until the PAC body is in.
+        let mut text = String::new();
         let mut buf = vec![0u8; 4096];
-        let n = s.read(&mut buf).await.unwrap();
-        let text = String::from_utf8_lossy(&buf[..n]).to_string();
-        assert!(text.contains("200 OK"));
-        assert!(text.contains("work.ts.net"));
+        for _ in 0..50 {
+            let n = s.read(&mut buf).await.unwrap();
+            if n == 0 {
+                break;
+            }
+            text.push_str(&String::from_utf8_lossy(&buf[..n]));
+            if text.contains("work.ts.net") {
+                break;
+            }
+        }
+        assert!(text.contains("200 OK"), "got: {text}");
+        assert!(text.contains("work.ts.net"), "got: {text}");
     }
 }

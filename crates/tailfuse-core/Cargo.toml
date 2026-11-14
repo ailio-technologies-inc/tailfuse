@@ -16,3 +16,10 @@ base64 = "0.22"
 tracing = "0.1"
 dirs = "6"
 rand = "0.8"
+
+# Secrets (auth keys, the license key) live in the OS credential store where there is one.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }

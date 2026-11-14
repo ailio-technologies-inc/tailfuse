@@ -234,7 +234,6 @@ code:empty { display: none; }
 .entry-line { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .entry-line strong { flex: none; }
 .entry-account { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry-actions .pill { min-width: 104px; text-align: center; }
 .pill-wait { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
 /* Remove keeps its space; it only fades in */
 .entry-hover { display: inline-flex; opacity: 0; pointer-events: none; transition: opacity var(--dur) var(--ease); }
@@ -256,3 +255,16 @@ code:empty { display: none; }
 .switch--sm input:checked + .slider::before { transform: translateX(16px); }
 @media (hover: none) { .entry-hover { opacity: 1; pointer-events: auto; } }
 @media (prefers-reduced-motion: reduce) { .entry-pop, .entry-hover { transition: none; } }
+
+/* status as a plain label beside the switch; remove as a small icon */
+.state { font-size: var(--t-label); font-weight: 500; color: var(--muted); white-space: nowrap; min-width: 92px; text-align: right; }
+.state.pill-on { color: var(--ok); }
+.state.pill-bad { color: var(--bad); }
+.state.pill-wait { color: var(--accent); }
+.entry--tailnet .entry-actions { gap: 12px; }
+.entry--tailnet .switch--sm input:checked + .slider::before { background: #ffffff; }
+.icon-btn { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; transition: background .12s ease, color .12s ease; }
+.icon-btn:hover { background: var(--surface); color: var(--ink); }
+.icon-btn.is-armed { color: var(--bad); background: color-mix(in oklab, var(--bad) 12%, transparent); }
+.icon-btn:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
+.state { background: none; border: 0; padding: 0; }

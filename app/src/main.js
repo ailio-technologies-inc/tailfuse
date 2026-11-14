@@ -121,6 +121,17 @@ function tailnetState(p, up) {
   return ["Sign-in needed", "pill-wait"];
 }
 
+// A small remove control for a tailnet row; asks twice like the Remove button.
+function removeIcon(name) {
+  const id = `profile:${name}`;
+  const armed = pendingRemove.has(id);
+  const b = h("button", { class: `icon-btn${armed ? " is-armed" : ""}`, type: "button", "data-remove": id, title: armed ? "Click again to remove" : `Remove ${name}`, "aria-label": armed ? `Confirm removing ${name}` : `Remove ${name}` });
+  b.innerHTML = armed
+    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+  return b;
+}
+
 function profileEntry(p, up) {
   const [label, tone] = tailnetState(p, up);
   const ips = p.ips.filter(Boolean);
@@ -138,14 +149,14 @@ function profileEntry(p, up) {
       p.error && h("span", { class: "muted bad" }, p.error),
     ),
     h("div", { class: "entry-actions" },
-      h("span", { class: `pill ${tone}` }, label),
+      h("span", { class: `state ${tone}` }, label),
       needsSignIn
         ? h("button", { class: "btn btn--primary btn--sm", type: "button", "data-login": p.name }, "Sign in")
         : h("label", { class: "switch switch--sm", title: p.online ? `Disconnect ${p.name}` : `Connect ${p.name}` },
             h("input", { type: "checkbox", checked: Boolean(p.online), "data-tailnet": p.name, "aria-label": `${p.name} connected` }),
             h("span", { class: "slider" }),
           ),
-      h("span", { class: "entry-hover" }, removeButton("profile", p.name)),
+      h("span", { class: "entry-hover" }, removeIcon(p.name)),
     ),
     details.length > 0 && h("dl", { class: "entry-pop", role: "tooltip" },
       ...details.flatMap(([k, v]) => [h("dt", null, k), h("dd", { class: k.startsWith("IP") ? "mono" : "" }, v)]),
