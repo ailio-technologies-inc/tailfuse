@@ -120,12 +120,21 @@ refresh();
 setInterval(refresh, 2000);
 
 // Fit the window to the panel, so no empty strip hangs below it (fit_panel in lib.rs).
-// scrollHeight is the panel's natural height even while max-height clamps it.
+// The panel's own height is capped by the window (max-height: 100vh), so measure
+// its content instead: each visible section's full height (a scrolling list
+// reports all of its rows in scrollHeight), plus the panel's border.
 let lastFit = 0;
 function fitWindow() {
   const el = document.querySelector(".panel");
   if (!invoke || !el) return;
-  const h = Math.ceil(el.scrollHeight);
+  let h = 0;
+  for (const child of el.children) {
+    if (child.hidden || getComputedStyle(child).display === "none") continue;
+    const cs = getComputedStyle(child);
+    h += child.scrollHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
+  }
+  const ps = getComputedStyle(el);
+  h = Math.ceil(h + parseFloat(ps.borderTopWidth) + parseFloat(ps.borderBottomWidth));
   if (h && h !== lastFit) {
     lastFit = h;
     invoke("fit_panel", { height: h }).catch(() => {});
