@@ -17,7 +17,7 @@ Tailfuse is made by Ailio Technologies Inc. (https://ailio.ca). It is an indepen
 
 ## Install
 
-- The menu-bar app, served from GitHub Releases: https://tailfuse.com/download (picks the platform), or https://tailfuse.com/download/app/macos (universal .dmg), /download/app/windows (installer), /download/app/linux (AppImage), /download/app/linux-deb
+- The menu-bar app, served from GitHub Releases: https://tailfuse.com/download (picks the platform), or https://tailfuse.com/download/app/macos (universal app, signed and notarized by Apple), /download/app/windows (installer), /download/app/linux (AppImage), /download/app/linux-deb
 - The command-line tool, as an archive: https://tailfuse.com/download/cli/macos, /download/cli/windows, /download/cli/linux-amd64, /download/cli/linux-arm64
 - The app and the command line both run Tailscale's own `tailscaled`, which must be installed on the machine.
 - macOS: `brew install ailio-technologies-inc/tap/tailfuse`

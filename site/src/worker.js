@@ -273,7 +273,8 @@ async function claimLicense(url, env) {
 const REPO = 'ailio-technologies-inc/tailfuse';
 const RELEASES = `https://github.com/${REPO}/releases/latest`;
 const APP_SUFFIX = {
-  macos: '-macos-universal.dmg',
+  // The notarized zip once the cluster has published it; the ad-hoc dmg until then.
+  macos: ['-macos-universal.zip', '-macos-universal.dmg'],
   windows: '-windows-x86_64-setup.exe',
   linux: '-linux-amd64.AppImage',
   'linux-deb': '-linux-amd64.deb',
@@ -320,7 +321,10 @@ async function download(request, url, ctx) {
   }
   if (!suffix) return Response.redirect(RELEASES, 302);
   const assets = await latestAssets(ctx).catch(() => []);
-  const asset = assets.find((a) => typeof a.name === 'string' && a.name.startsWith(prefix) && a.name.endsWith(suffix));
+  const suffixes = Array.isArray(suffix) ? suffix : [suffix];
+  const asset = suffixes
+    .map((sfx) => assets.find((a) => typeof a.name === 'string' && a.name.startsWith(prefix) && a.name.endsWith(sfx)))
+    .find(Boolean);
   if (!asset?.browser_download_url) return Response.redirect(RELEASES, 302);
   // Stream the file from GitHub's CDN through tailfuse.com, so the visitor stays on this site and
   // the browser saves the file at once. GitHub still serves the bytes; the Worker only relays them.
