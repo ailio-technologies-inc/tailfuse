@@ -34,6 +34,8 @@ pub struct ProfileStatus {
     pub error: String,
     /// The login this node is signed in with, when known.
     pub account: String,
+    /// Signed in but switched off (`tailscale down`): a deliberate disconnect.
+    pub paused: bool,
 }
 
 /// What Tailscale reports when a tailnet's policy needs its logging left on.
@@ -229,14 +231,8 @@ impl DaemonSet {
                             .any(|h| h.contains(LOGGING_REQUIRED))
                         {
                             ps.error = "This tailnet requires Tailscale's logging. Remove it here and add it again with Sign in with Tailscale.".into();
-                        } else if st.backend_state.as_deref() == Some("Stopped") {
-                            // Signed in but not connected: connect it.
-                            let _ = tokio::time::timeout(
-                                std::time::Duration::from_secs(5),
-                                tailscale_cli(&r.socket, &["up", "--accept-dns=false"]),
-                            )
-                            .await;
                         }
+                        ps.paused = st.backend_state.as_deref() == Some("Stopped");
                         ps.online = st.backend_state.as_deref() == Some("Running");
                         if let Some(s) = st.self_ {
                             ps.hostname = s.hostname.unwrap_or_default();
@@ -354,6 +350,27 @@ pub async fn official_tailscale() -> Option<OfficialTailscale> {
             .unwrap_or_default(),
         account: account_from_status(&text),
     })
+}
+
+/// Connect (`up`) or disconnect (`down`) one running profile's node. The
+/// choice is kept by tailscaled, so it survives a restart of Tailfuse.
+pub async fn set_connected(name: &str, on: bool) -> Result<()> {
+    let socket = config::profile_socket(name);
+    if !socket.exists() {
+        bail!("{name} is not running; turn Tailfuse on first");
+    }
+    let args: &[&str] = if on {
+        &["up", "--accept-dns=false"]
+    } else {
+        &["down"]
+    };
+    tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        tailscale_cli(&socket, args),
+    )
+    .await
+    .context("Tailscale took too long to answer")??;
+    Ok(())
 }
 
 /// Disconnect the official Tailscale client (`tailscale down`). It stays

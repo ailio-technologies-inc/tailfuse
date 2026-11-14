@@ -113,17 +113,21 @@ function removeButton(kind, name) {
   return h("button", { class: `btn btn--secondary btn--sm${armed ? " is-armed" : ""}`, type: "button", "data-remove": id }, armed ? "Remove for good" : "Remove");
 }
 
+function tailnetState(p, up) {
+  if (p.error) return ["Problem", "pill-bad"];
+  if (p.online) return ["Connected", "pill-on"];
+  if (!up) return ["Off", ""];
+  if (p.paused) return ["Disconnected", ""];
+  return ["Sign-in needed", "pill-wait"];
+}
+
 function profileEntry(p, up) {
-  const state = p.error ? "Problem" : p.online ? "Online" : up ? "Sign-in needed" : "Off";
+  const [label, tone] = tailnetState(p, up);
   const ips = p.ips.filter(Boolean);
-  const v4 = ips.find((ip) => !ip.includes(":"));
-  // Shown only on hover or keyboard focus, so the list stays short.
-  const details = [
-    p.hostname && `As ${p.hostname}`,
-    v4 && v4,
-    ...ips.filter((ip) => ip !== v4),
-  ].filter(Boolean);
-  return h("li", { class: "entry entry--tailnet", tabIndex: 0, title: [p.account, ...ips].filter(Boolean).join("\n") },
+  // Hover or focus shows these in a card that floats over the list, so nothing below moves.
+  const details = [p.hostname && ["This Mac there", p.hostname], ...ips.map((ip) => [ip.includes(":") ? "IPv6" : "IPv4", ip]), p.account && ["Account", p.account]].filter(Boolean);
+  const needsSignIn = up && !p.online && !p.paused && !p.error;
+  return h("li", { class: "entry entry--tailnet", tabIndex: 0 },
     h("span", { class: `dot${p.online ? " on" : ""}${p.error ? " bad" : ""}` }),
     h("div", { class: "entry-main" },
       h("div", { class: "entry-line" },
@@ -131,13 +135,20 @@ function profileEntry(p, up) {
         p.account && h("span", { class: "muted entry-account" }, p.account),
       ),
       h("span", { class: "mono muted" }, p.suffixes.map((x) => `*${x}`).join("  ")),
-      details.length > 0 && h("span", { class: "entry-more muted" }, details.join(" · ")),
       p.error && h("span", { class: "muted bad" }, p.error),
     ),
     h("div", { class: "entry-actions" },
-      h("span", { class: `pill${p.online ? " pill-on" : ""}${p.error ? " pill-bad" : ""}` }, state),
-      !p.online && up && h("button", { class: "btn btn--primary btn--sm", type: "button", "data-login": p.name }, "Sign in"),
+      h("span", { class: `pill ${tone}` }, label),
+      needsSignIn
+        ? h("button", { class: "btn btn--primary btn--sm", type: "button", "data-login": p.name }, "Sign in")
+        : h("label", { class: "switch switch--sm", title: p.online ? `Disconnect ${p.name}` : `Connect ${p.name}` },
+            h("input", { type: "checkbox", checked: Boolean(p.online), "data-tailnet": p.name, "aria-label": `${p.name} connected` }),
+            h("span", { class: "slider" }),
+          ),
       h("span", { class: "entry-hover" }, removeButton("profile", p.name)),
+    ),
+    details.length > 0 && h("dl", { class: "entry-pop", role: "tooltip" },
+      ...details.flatMap(([k, v]) => [h("dt", null, k), h("dd", { class: k.startsWith("IP") ? "mono" : "" }, v)]),
     ),
   );
 }
@@ -254,6 +265,16 @@ function toggleForm(id, open) {
 if (!invoke) {
   $("#status").textContent = "This window could not reach the Tailfuse app. Quit Tailfuse and open it again.";
 } else {
+  // Quick connect/disconnect for one tailnet.
+  document.addEventListener("change", async (e) => {
+    const name = e.target.dataset?.tailnet;
+    if (!name) return;
+    e.target.disabled = true;
+    await call("set_tailnet", { name, on: e.target.checked }).catch(() => {});
+    e.target.disabled = false;
+    refresh();
+  });
+
   $("#power").addEventListener("change", async (e) => {
     e.target.disabled = true;
     try {

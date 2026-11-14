@@ -50,6 +50,8 @@ struct ProfileView {
     error: String,
     /// The login this tailnet is signed in with, when known.
     account: String,
+    /// Signed in but disconnected on purpose.
+    paused: bool,
 }
 
 #[derive(Serialize)]
@@ -96,6 +98,7 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
                         .map(|s| s.account.clone())
                         .filter(|a| !a.is_empty())
                         .unwrap_or_else(|| prof.account.clone()),
+                    paused: st.map(|s| s.paused).unwrap_or(false),
                 });
             }
             (true, views)
@@ -112,6 +115,7 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
                     ips: vec![],
                     error: String::new(),
                     account: prof.account.clone(),
+                    paused: false,
                 })
                 .collect(),
         ),
@@ -669,6 +673,40 @@ async fn install_cli() -> Result<String, String> {
         .map_err(|e| e.to_string())?
 }
 
+/// Quick connect or disconnect one tailnet. Connecting turns Tailfuse on
+/// first when it is off; a tailnet that was never signed in opens the sign-in.
+#[tauri::command]
+async fn set_tailnet(
+    state: State<'_, SharedState>,
+    app: AppHandle,
+    name: String,
+    on: bool,
+) -> Result<(), String> {
+    if on && state.running.lock().await.is_none() {
+        start_inner(&state).await?;
+        // The node needs a moment before it answers.
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    }
+    if !on && state.running.lock().await.is_none() {
+        return Ok(());
+    }
+    match daemon::set_connected(&name, on).await {
+        Ok(()) => {}
+        Err(e) if on && format!("{e:#}").to_lowercase().contains("login") => {
+            let cfg = state.cfg.lock().await.clone();
+            if let Some(u) = daemon::login_start(&cfg, &name)
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                let _ = app.opener().open_url(&u, None::<&str>);
+            }
+        }
+        Err(e) => return Err(format!("{e:#}")),
+    }
+    refresh_tray(&app);
+    Ok(())
+}
+
 /// Disconnect the official Tailscale app; it stays signed in.
 #[tauri::command]
 async fn disconnect_tailscale_app() -> Result<(), String> {
@@ -1050,6 +1088,7 @@ pub fn run() {
             disconnect_browsers,
             notify_user,
             install_cli,
+            set_tailnet,
             remove_profile,
             add_tunnel,
             remove_tunnel,

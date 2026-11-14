@@ -31,24 +31,42 @@ async function refresh() {
 
   $("#empty").hidden = s.profiles.length > 0;
   const ul = $("#profiles");
-  ul.innerHTML = "";
-  for (const p of s.profiles) {
+  ul.replaceChildren(...s.profiles.map((p) => {
     const li = document.createElement("li");
     li.className = "row";
-    li.innerHTML = `
-      <span class="dot ${p.online ? "on" : ""}"></span>
-      <div class="row-main">
-        <strong>${escapeHtml(p.name)}</strong>
-        <span class="mono">${escapeHtml(p.suffixes.join("  "))}</span>
-      </div>
-      ${p.online
-        ? `<span class="pill on">on</span>`
-        : s.up
-          ? `<button class="btn btn--primary btn--sm" data-login="${escapeHtml(p.name)}">Sign in</button>`
-          : `<span class="pill">off</span>`}
-    `;
-    ul.appendChild(li);
-  }
+    const dot = document.createElement("span");
+    dot.className = `dot ${p.online ? "on" : ""}`;
+    const main = document.createElement("div");
+    main.className = "row-main";
+    const name = document.createElement("strong");
+    name.textContent = p.name;
+    const sub = document.createElement("span");
+    sub.className = "mono";
+    sub.textContent = p.online ? (p.account || p.suffixes.join("  ")) : p.paused ? "Disconnected" : s.up ? "Sign-in needed" : "Off";
+    main.append(name, sub);
+    li.append(dot, main);
+    if (s.up && !p.online && !p.paused) {
+      const b = document.createElement("button");
+      b.className = "btn btn--primary btn--sm";
+      b.dataset.login = p.name;
+      b.textContent = "Sign in";
+      li.append(b);
+    } else {
+      const sw = document.createElement("label");
+      sw.className = "switch switch--sm";
+      sw.title = p.online ? `Disconnect ${p.name}` : `Connect ${p.name}`;
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = Boolean(p.online);
+      input.dataset.tailnet = p.name;
+      input.setAttribute("aria-label", `${p.name} connected`);
+      const slider = document.createElement("span");
+      slider.className = "slider";
+      sw.append(input, slider);
+      li.append(sw);
+    }
+    return li;
+  }));
 }
 
 function escapeHtml(s) {
@@ -63,7 +81,21 @@ $("#power").addEventListener("change", async (e) => {
   try {
     await invoke(e.target.checked ? "start" : "stop");
   } catch (err) {
-    alert(String(err));
+    invoke("notify_user", { title: "Tailfuse could not turn on", body: String(err) }).catch(() => {});
+  }
+  e.target.disabled = false;
+  refresh();
+});
+
+// Quick connect/disconnect for one tailnet.
+document.addEventListener("change", async (e) => {
+  const name = e.target.dataset?.tailnet;
+  if (!name || !invoke) return;
+  e.target.disabled = true;
+  try {
+    await invoke("set_tailnet", { name, on: e.target.checked });
+  } catch (err) {
+    invoke("notify_user", { title: "Tailfuse", body: String(err) }).catch(() => {});
   }
   e.target.disabled = false;
   refresh();

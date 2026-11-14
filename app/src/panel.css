@@ -3,17 +3,18 @@
    draws the card. */
 
 :root {
-  --p-bg: #f4efe5; --p-surface: #e7dfcf; --p-ink: #29251e; --p-muted: #675e51;
-  --p-accent: #8c6418; --p-accent-ink: #ffffff; --p-action: #8c6418; --p-action-ink: #ffffff;
-  --p-inv-bg: #29251e; --p-inv-surface: #35312a; --p-inv-ink: #f4efe5; --p-inv-muted: #a09b92;
-  --p-inv-accent: #f4efe5; --p-inv-accent-ink: #29251e; --p-inv-action: #f4efe5; --p-inv-action-ink: #29251e;
-  --font-display: "Chivo", system-ui, sans-serif;
-  --font-text: "Chivo", system-ui, sans-serif;
-  --font-mono: "Chivo Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+  --p-bg: #18191b; --p-surface: #222427; --p-ink: #eff0f1; --p-muted: #9c9ea3;
+  --p-accent: #ff4a1f; --p-accent-ink: #18191b; --p-action: #ff4a1f; --p-action-ink: #18191b;
+  --p-inv-bg: #eff0f1; --p-inv-surface: #dedfe0; --p-inv-ink: #18191b; --p-inv-muted: #5b5c5e;
+  --p-inv-accent: #18191b; --p-inv-accent-ink: #eff0f1; --p-inv-action: #18191b; --p-inv-action-ink: #eff0f1;
+  --font-display: "Host Grotesk", system-ui, sans-serif;
+  --font-text: "Host Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --display-weight: 500;
   --display-tracking: -0.02em;
-  --card: color-mix(in oklab, var(--p-bg) 62%, #ffffff);
-  --ok: #3e7d4f;
+  --card: #222427;
+  --ok: #3ecf72;
 }
 
 html, body { background: transparent; }
@@ -29,7 +30,7 @@ body {
   background: var(--p-bg);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: 0 18px 50px -12px rgba(41, 37, 30, 0.45), 0 2px 8px rgba(41, 37, 30, 0.18);
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -107,3 +108,11 @@ body {
 .btn.btn--ghost:hover { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 40%, transparent); }
 .btn { height: var(--btn-h-sm); }
 :root { --bad: #b8381f; }
+
+.switch--sm { position: relative; display: inline-block; width: 36px; height: 20px; flex: none; }
+.switch--sm input { opacity: 0; width: 0; height: 0; }
+.switch--sm .slider { position: absolute; inset: 0; cursor: pointer; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 999px; transition: background .15s ease; }
+.switch--sm .slider::before { content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; border-radius: 50%; background: var(--muted); transition: transform .15s ease, background .15s ease; }
+.switch--sm input:checked + .slider { background: var(--ok); border-color: var(--ok); }
+.switch--sm input:checked + .slider::before { transform: translateX(16px); background: #101112; }
+.switch--sm input:focus-visible + .slider { outline: 2px solid var(--action); outline-offset: 2px; }

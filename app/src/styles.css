@@ -229,14 +229,30 @@ code:empty { display: none; }
 @keyframes add-pulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .add-card.is-busy .add-icon { animation: none; } }
 
-/* tailnet rows: short by default, the rest on hover or focus */
-.entry--tailnet { padding: 10px 14px; }
+/* tailnet rows: short by default; details float over the list on hover, so nothing moves */
+.entry--tailnet { position: relative; padding: 10px 14px; }
 .entry-line { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .entry-line strong { flex: none; }
 .entry-account { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry-more { display: none; }
-.entry-hover { display: none; }
-.entry--tailnet:hover .entry-more, .entry--tailnet:focus-within .entry-more { display: block; }
-.entry--tailnet:hover .entry-hover, .entry--tailnet:focus-within .entry-hover { display: inline-flex; }
+.entry-actions .pill { min-width: 104px; text-align: center; }
+.pill-wait { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
+/* Remove keeps its space; it only fades in */
+.entry-hover { display: inline-flex; opacity: 0; pointer-events: none; transition: opacity var(--dur) var(--ease); }
+.entry--tailnet:hover .entry-hover, .entry--tailnet:focus-within .entry-hover { opacity: 1; pointer-events: auto; }
+.entry-pop {
+  position: absolute; z-index: 5; left: 34px; top: calc(100% - 4px);
+  display: grid; grid-template-columns: auto auto; gap: 4px 14px; margin: 0;
+  padding: 10px 14px; border-radius: var(--r-sm); border: 1px solid var(--line-strong);
+  background: #0c0d0e; box-shadow: 0 14px 30px rgba(0, 0, 0, .5);
+  font-size: var(--t-label); opacity: 0; transform: translateY(-4px); pointer-events: none;
+  transition: opacity .12s ease, transform .12s ease;
+}
+.entry-pop dt { color: var(--muted); }
+.entry-pop dd { margin: 0; color: var(--ink); }
+.entry--tailnet:hover .entry-pop, .entry--tailnet:focus-within .entry-pop { opacity: 1; transform: none; transition-delay: .25s; }
 .entry--tailnet:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
-@media (hover: none) { .entry-more, .entry-hover { display: inline-flex; } }
+.switch--sm { width: 36px; height: 20px; }
+.switch--sm .slider::before { width: 14px; height: 14px; left: 2px; top: 2px; }
+.switch--sm input:checked + .slider::before { transform: translateX(16px); }
+@media (hover: none) { .entry-hover { opacity: 1; pointer-events: auto; } }
+@media (prefers-reduced-motion: reduce) { .entry-pop, .entry-hover { transition: none; } }
