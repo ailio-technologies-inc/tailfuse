@@ -353,6 +353,14 @@ if (!invoke) {
       return refresh();
     }
 
+    if (target.id === "mcp-copy") {
+      navigator.clipboard.writeText("claude mcp add tailfuse -- tailfuse mcp").then(() => {
+        target.textContent = "Copied";
+        setTimeout(() => (target.textContent = "Copy setup"), 1500);
+      }, () => {});
+      return;
+    }
+
     if (target.id === "pac-copy") {
       navigator.clipboard.writeText($("#pac-url").textContent).then(() => {
         target.textContent = "Copied";

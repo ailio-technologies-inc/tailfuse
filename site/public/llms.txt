@@ -63,6 +63,10 @@ tunnels:
 - `tailfuse serve-pac`: just the PAC URL, for manual browser configuration.
 - `tailfuse license activate <key>`: activate a license key.
 
+## Use with AI assistants (MCP)
+
+`tailfuse mcp` runs a Model Context Protocol server on stdio. Register it with `claude mcp add tailfuse -- tailfuse mcp`, or `{"command": "tailfuse", "args": ["mcp"]}` in any MCP client. Tools: `tailfuse_status`, `tailfuse_list_devices`, `tailfuse_which_tailnet`, `tailfuse_http_request` (HTTP to a tailnet service, owned hostnames only), `tailfuse_check_port`, `tailfuse_set_connected`. It uses the running Tailfuse and the same rule: only hostnames a tailnet owns are reachable.
+
 ## License keys and price
 
 - Two tailnet profiles are free, forever.

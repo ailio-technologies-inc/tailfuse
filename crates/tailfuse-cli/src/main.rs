@@ -9,6 +9,8 @@ use tailfuse_core::config::{self, Config, Profile, Tunnel};
 use tailfuse_core::{daemon, license, router, sysproxy, tunnels};
 use tokio::sync::watch;
 
+mod mcp;
+
 #[derive(Parser)]
 #[command(name = "tailfuse", version, about = "Connect to multiple Tailscale tailnets at once", long_about = None)]
 struct Cli {
@@ -48,6 +50,8 @@ enum Commands {
     Ssh { target: String, args: Vec<String> },
     /// Print the PAC URL and serve it (manual browser setup).
     ServePac,
+    /// Run an MCP server on stdio, for AI assistants (e.g. `claude mcp add tailfuse -- tailfuse mcp`).
+    Mcp,
     /// ssh ProxyCommand backend (internal).
     #[command(hide = true)]
     DialProfile {
@@ -166,6 +170,10 @@ async fn main() -> Result<()> {
         Commands::Up { no_pac } => cmd_up(no_pac).await,
         Commands::Down => cmd_down(),
         Commands::Status => cmd_status().await,
+        Commands::Mcp => {
+            let path = flag_config_path()?;
+            tokio::task::spawn_blocking(move || mcp::serve(path)).await?
+        }
         Commands::Test { hostname } => cmd_test(&hostname),
         Commands::Env => cmd_env(),
         Commands::Run { command } => cmd_run(command).await,

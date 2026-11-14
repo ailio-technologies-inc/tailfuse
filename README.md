@@ -115,6 +115,27 @@ Notarization uses the org's App Store Connect key from
 in this repo). One-time keychain setup already done:
 `xcrun notarytool ... --keychain-profile tailfuse`.
 
+## Use with AI assistants (MCP)
+
+`tailfuse mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server on stdio. It lets Claude, Cursor and other MCP clients see your tailnets and reach their services through Tailfuse, under the same rule as everything else: only hostnames a tailnet owns are reachable.
+
+```sh
+claude mcp add tailfuse -- tailfuse mcp        # Claude Code
+```
+
+Or in any client's MCP config: `{"command": "tailfuse", "args": ["mcp"]}`.
+
+| Tool | What it does |
+|---|---|
+| `tailfuse_status` | Each tailnet's state, account, suffixes, this computer's name and IPs |
+| `tailfuse_list_devices` | Devices on a tailnet: name, DNS name, IPs, OS, online (filter by tailnet, text, online) |
+| `tailfuse_which_tailnet` | Which tailnet a hostname or URL goes to |
+| `tailfuse_http_request` | An HTTP(S) request to a tailnet service (status, headers, up to 64 KB of body) |
+| `tailfuse_check_port` | Whether a TCP port on a tailnet host accepts connections |
+| `tailfuse_set_connected` | Connect or disconnect one tailnet |
+
+It works against the running Tailfuse (the app, or `tailfuse up`).
+
 ## Repo layout
 
 | Path | What |
