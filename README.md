@@ -102,20 +102,18 @@ npm run tauri build                          # signed bundle (dmg/msi/appimage)
 ### Release builds (macOS)
 
 Every build is signed with the Developer ID identity and the hardened
-runtime. A build that other Macs open without a Gatekeeper warning also
-needs notarization, which is a release-time env step (the credentials never
-live in the repo):
+runtime. Ship-ready builds also carry a notarization ticket:
 
 ```sh
-APPLE_ID=you@example.com \
-APPLE_PASSWORD=<app-specific password from appleid.apple.com> \
-APPLE_TEAM_ID=N7TM93NL4Q \
-npm run tauri build -- --config '{"bundle":{"macOS":{"notarize":true}}}'
+npm run tauri build          # signed .app + .dmg
+scripts/notarize-macos.sh    # sign the dmg, submit to Apple, staple, verify
 ```
 
-One-time, on the build machine, the password can live in the keychain instead:
-`xcrun notarytool store-credentials tailfuse --apple-id … --team-id N7TM93NL4Q --password …`,
-then `APPLE_PASSWORD=@keychain:tailfuse`.
+Notarization uses the org's App Store Connect key from
+`~/.appstoreconnect/` (issuer + key id in `*.env`, the `.p8` in
+`private_keys/` — the same key dagpeek's release uses; nothing of it lives
+in this repo). One-time keychain setup already done:
+`xcrun notarytool ... --keychain-profile tailfuse`.
 
 ## Repo layout
 

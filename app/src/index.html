@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>tailfuse</title>
-    <meta name="description" content="tailfuse connects a Mac or Windows machine to several Tailscale tailnets at once, routing each name to its own tailnet." />
+    <meta name="description" content="Tailfuse keeps several Tailscale tailnets online at once and sends each address to the tailnet that owns it." />
     <meta name="page-type" content="software" />
     <meta name="site-kind" content="software" />
     <link rel="stylesheet" href="assets/kit/system.css" />
@@ -13,79 +13,127 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- plan: kind software · palette limewash-ochre (dealt; warm limewash ground, ochre accent — the material of a bench tool) · type chivo (neo-grotesk + matching mono, developer tool) · radius soft · one window, no hero/sections: a utility window the kit's page rhythm does not apply to (waived in .taste-skill/waivers.json) -->
+    <!-- plan: kind software · palette limewash-ochre · type chivo · radius soft · one utility window. Written for the person using it: plain words, one clear next step, the set-up forms out of sight until asked for, the technical detail under Advanced. -->
     <header class="titlebar" data-tauri-drag-region="deep">
       <div class="brand">
         <h1>tailfuse</h1>
-        <span id="license" class="license"></span>
       </div>
       <div class="header-actions">
-        <label class="switch" title="Start or stop tailfuse">
-          <input type="checkbox" id="power" aria-label="Start or stop tailfuse" />
+        <span id="power-label" class="power-label">Off</span>
+        <label class="switch" title="Turn Tailfuse on or off">
+          <input type="checkbox" id="power" aria-label="Turn Tailfuse on or off" />
           <span class="slider"></span>
         </label>
-        <span id="power-label" class="power-label">Stopped</span>
       </div>
     </header>
 
-    <div class="body">
+    <div class="body" role="main">
+      <p id="status" class="status" role="status">Loading your tailnets.</p>
+      <p id="error" class="notice notice--bad" role="alert" hidden></p>
+
       <section class="pane" aria-labelledby="tailnets-h">
         <div class="pane-head">
-          <h2 id="tailnets-h">Tailnets</h2>
-          <div class="pane-tools">
-            <button id="import" type="button" class="btn btn--secondary btn--sm" title="Add the tailnet this Mac's Tailscale app is signed in to">Import from Tailscale</button>
-            <form id="add-profile" class="inline-form">
-              <span class="field"><input id="p-name" placeholder="work" required aria-label="Profile name" /></span>
-              <span class="field"><input id="p-suffix" placeholder=".work.ts.net" required aria-label="Hostname suffix" /></span>
-              <button type="submit" class="btn btn--primary btn--sm">Add profile</button>
-            </form>
-          </div>
+          <h2 id="tailnets-h">Your tailnets</h2>
+          <span class="hint" id="profile-hint"></span>
         </div>
         <ul id="profiles" class="list"></ul>
-        <p class="hint" id="profile-hint"></p>
+        <div id="profiles-empty" class="empty" hidden>
+          <strong>No tailnets yet</strong>
+          <p>Bring in the tailnet your Tailscale app is signed in to, or add one by hand.</p>
+        </div>
+        <div class="pane-tools">
+          <button id="import" type="button" class="btn btn--primary btn--sm">Import from Tailscale</button>
+          <button id="show-add-profile" type="button" class="btn btn--secondary btn--sm" aria-expanded="false" aria-controls="add-profile">Add a tailnet by hand</button>
+        </div>
         <p class="hint" id="import-msg" role="status"></p>
+        <form id="add-profile" class="form" hidden>
+          <label class="field">
+            <span>Name</span>
+            <input id="p-name" placeholder="work" required autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <small>A short name you choose.</small>
+          </label>
+          <label class="field">
+            <span>Addresses it owns</span>
+            <input id="p-suffix" placeholder=".work.ts.net" required autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <small>Every address ending in this goes to this tailnet.</small>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary btn--sm">Add tailnet</button>
+            <button type="button" class="btn btn--secondary btn--sm" data-close="add-profile">Cancel</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="pane" aria-labelledby="check-h">
+        <h2 id="check-h">Check where an address goes</h2>
+        <form id="test-host" class="inline-form">
+          <label class="field field--grow">
+            <span class="sr-only">Address</span>
+            <input id="test-input" placeholder="nas.home-lab.ts.net" required autocomplete="off" autocapitalize="off" spellcheck="false" />
+          </label>
+          <button type="submit" class="btn btn--secondary btn--sm">Check address</button>
+        </form>
+        <p id="test-result" class="hint" role="status"></p>
       </section>
 
       <section class="pane" aria-labelledby="tunnels-h">
         <div class="pane-head">
-          <h2 id="tunnels-h">Tunnels</h2>
-          <form id="add-tunnel" class="inline-form">
-            <span class="field"><input id="t-name" placeholder="prod-db" required aria-label="Tunnel name" /></span>
-            <span class="field"><input id="t-listen" placeholder="127.0.0.1:5432" required aria-label="Local listen address" /></span>
-            <span class="field"><input id="t-target" placeholder="db.work.ts.net:5432" required aria-label="Remote target" /></span>
-            <span class="field"><input id="t-profile" placeholder="work" required aria-label="Profile" /></span>
-            <button type="submit" class="btn btn--primary btn--sm">Add tunnel</button>
-          </form>
+          <h2 id="tunnels-h">Local ports</h2>
         </div>
+        <p class="hint">For apps that can't use a proxy, such as a database client: a port on this computer that leads to one service on a tailnet.</p>
         <ul id="tunnels" class="list"></ul>
+        <div class="pane-tools">
+          <button id="show-add-tunnel" type="button" class="btn btn--secondary btn--sm" aria-expanded="false" aria-controls="add-tunnel">Add a local port</button>
+        </div>
+        <form id="add-tunnel" class="form" hidden>
+          <label class="field">
+            <span>Name</span>
+            <input id="t-name" placeholder="prod-db" required autocomplete="off" autocapitalize="off" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span>Port on this computer</span>
+            <input id="t-listen" placeholder="127.0.0.1:5432" required autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span>Service on the tailnet</span>
+            <input id="t-target" placeholder="db.work.ts.net:5432" required autocomplete="off" autocapitalize="off" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span>Tailnet</span>
+            <select id="t-profile" required></select>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary btn--sm">Add local port</button>
+            <button type="button" class="btn btn--secondary btn--sm" data-close="add-tunnel">Cancel</button>
+          </div>
+        </form>
       </section>
 
-      <section class="pane pane--footer" aria-label="Browser routing, license and startup">
-        <div>
-          <h2>Browser routing</h2>
-          <p>
-            PAC URL: <code id="pac-url"></code><br />
-            The app sets the system PAC on start (macOS/Windows) and clears its
-            own setting on quit. Unowned hostnames are always refused.
-          </p>
-          <form id="test-host" class="inline-form">
-            <span class="field"><input id="test-input" placeholder="nas.home-lab.ts.net" aria-label="Hostname to test" /></span>
-            <button type="submit" class="btn btn--secondary btn--sm">Test routing</button>
-            <span id="test-result" class="hint"></span>
-          </form>
-        </div>
-        <div>
-          <h2>License &amp; startup</h2>
-          <form id="activate" class="inline-form">
-            <span class="field"><input id="license-key" placeholder="tailfuse_…" class="wide" aria-label="License key" /></span>
-            <button type="submit" class="btn btn--primary btn--sm">Activate</button>
-          </form>
-          <p id="license-msg" class="hint" role="status"></p>
-          <label class="check">
-            <input type="checkbox" id="autostart" />
-            <span>Open tailfuse at login</span>
+      <section class="pane" aria-labelledby="license-h">
+        <h2 id="license-h">License</h2>
+        <p class="hint">Two tailnets are free. More need a license key, which is by optional donation. <button type="button" class="linklike" id="get-key">Get a key at tailfuse.com</button></p>
+        <p class="hint">This copy: <span id="license"></span></p>
+        <form id="activate" class="inline-form">
+          <label class="field field--grow">
+            <span class="sr-only">License key</span>
+            <input id="license-key" placeholder="Paste your key: tailfuse_…" required autocomplete="off" spellcheck="false" />
           </label>
-        </div>
+          <button type="submit" class="btn btn--secondary btn--sm">Activate key</button>
+        </form>
+        <p id="license-msg" class="hint" role="status"></p>
+      </section>
+
+      <section class="pane" aria-labelledby="settings-h">
+        <h2 id="settings-h">Settings</h2>
+        <label class="check">
+          <input type="checkbox" id="autostart" />
+          <span>Open Tailfuse when I log in</span>
+        </label>
+        <details class="advanced">
+          <summary>Advanced</summary>
+          <p class="hint">While Tailfuse is on, it points your system's browsers at this set-up address (macOS and Windows) and clears it when you quit. For a browser you configure by hand, use it as the automatic proxy (PAC) address.</p>
+          <p><code id="pac-url"></code></p>
+        </details>
       </section>
     </div>
 
