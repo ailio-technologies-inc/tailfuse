@@ -96,6 +96,7 @@ function statusLine(s) {
 
 let lastState = null;
 let cliBusy = false;
+let signingIn = false;
 const pendingRemove = new Map(); // "profile:work" -> timer, for the two-step Remove
 
 function removeButton(kind, name) {
@@ -106,20 +107,29 @@ function removeButton(kind, name) {
 
 function profileEntry(p, up) {
   const state = p.error ? "Problem" : p.online ? "Online" : up ? "Sign-in needed" : "Off";
-  const where = [p.hostname, ...p.ips].filter(Boolean).join(" · ");
-  return h("li", { class: "entry" },
+  const ips = p.ips.filter(Boolean);
+  const v4 = ips.find((ip) => !ip.includes(":"));
+  // Shown only on hover or keyboard focus, so the list stays short.
+  const details = [
+    p.hostname && `As ${p.hostname}`,
+    v4 && v4,
+    ...ips.filter((ip) => ip !== v4),
+  ].filter(Boolean);
+  return h("li", { class: "entry entry--tailnet", tabIndex: 0, title: [p.account, ...ips].filter(Boolean).join("\n") },
     h("span", { class: `dot${p.online ? " on" : ""}${p.error ? " bad" : ""}` }),
     h("div", { class: "entry-main" },
-      h("strong", null, p.name),
-      h("span", { class: "muted" }, "Addresses ending in ", h("span", { class: "mono" }, p.suffixes.join(", "))),
-      p.account && h("span", { class: "muted" }, `Signed in as ${p.account}`),
-      where && h("span", { class: "muted" }, `This computer there: ${where}`),
+      h("div", { class: "entry-line" },
+        h("strong", null, p.name),
+        p.account && h("span", { class: "muted entry-account" }, p.account),
+      ),
+      h("span", { class: "mono muted" }, p.suffixes.map((x) => `*${x}`).join("  ")),
+      details.length > 0 && h("span", { class: "entry-more muted" }, details.join(" · ")),
       p.error && h("span", { class: "muted bad" }, p.error),
     ),
     h("div", { class: "entry-actions" },
       h("span", { class: `pill${p.online ? " pill-on" : ""}${p.error ? " pill-bad" : ""}` }, state),
       !p.online && up && h("button", { class: "btn btn--primary btn--sm", type: "button", "data-login": p.name }, "Sign in"),
-      removeButton("profile", p.name),
+      h("span", { class: "entry-hover" }, removeButton("profile", p.name)),
     ),
   );
 }
@@ -168,7 +178,13 @@ function render(s) {
 
   const count = s.profiles.length;
   $("#profile-hint").textContent = count === 0 ? "" : count <= 2 ? `${count} of 2 free tailnets used` : `${count} tailnets, licensed`;
-  $("#profiles-empty").hidden = count > 0;
+  if (!signingIn) {
+    const atLimit = count >= 2 && !/licensed|valid/i.test(s.license || "");
+    $("#signin-title").textContent = count === 0 ? "Add your first tailnet" : "Add another tailnet";
+    $("#signin-sub").textContent = atLimit
+      ? "Sign in with Tailscale in your browser. A third tailnet needs a license key (by optional donation)."
+      : "Sign in with Tailscale in your browser. The tailnet, its name and its account fill themselves in.";
+  }
   $("#profiles").replaceChildren(...s.profiles.map((p) => profileEntry(p, s.up)));
   $("#tunnels").replaceChildren(...s.tunnels.map(tunnelEntry));
 
@@ -311,17 +327,21 @@ if (!invoke) {
   $("#signin-new").addEventListener("click", async () => {
     const button = $("#signin-new");
     const msg = $("#signin-msg");
+    signingIn = true;
     button.disabled = true;
-    button.textContent = "Waiting for your browser";
-    msg.textContent = "Finish signing in in the browser page that just opened. This window updates when you're done.";
+    button.classList.add("is-busy");
+    $("#signin-title").textContent = "Waiting for your browser";
+    $("#signin-sub").textContent = "Finish signing in on the Tailscale page that just opened. This window updates when you're done.";
+    msg.textContent = "";
     try {
       const name = await invoke("sign_in_new_tailnet");
       msg.textContent = `${name} is signed in and coming online.`;
     } catch (err) {
-      msg.textContent = sentence(err);
+      showError(err);
     }
+    signingIn = false;
     button.disabled = false;
-    button.textContent = "Sign in with Tailscale";
+    button.classList.remove("is-busy");
     refresh();
   });
 

@@ -58,13 +58,14 @@
           <span class="hint" id="profile-hint"></span>
         </div>
         <ul id="profiles" class="list"></ul>
-        <div id="profiles-empty" class="empty" hidden>
-          <strong>No tailnets yet</strong>
-          <p>Sign in with Tailscale to add your first. Your browser opens, you choose the account, and the tailnet appears here.</p>
-        </div>
-        <div class="pane-tools">
-          <button id="signin-new" type="button" class="btn btn--primary btn--sm">Sign in with Tailscale</button>
-        </div>
+        <button id="signin-new" type="button" class="add-card">
+          <span class="add-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></span>
+          <span class="add-text">
+            <strong id="signin-title">Add a tailnet</strong>
+            <span id="signin-sub">Sign in with Tailscale in your browser. The tailnet, its name and its account fill themselves in.</span>
+          </span>
+          <span class="add-go" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></span>
+        </button>
         <p class="hint" id="signin-msg" role="status"></p>
       </section>
 
