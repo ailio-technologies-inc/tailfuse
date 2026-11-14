@@ -116,14 +116,24 @@
 
       <section class="pane" aria-labelledby="license-h">
         <h2 id="license-h">License</h2>
-        <p class="hint">Two tailnets are free. More need a license key, which is by optional donation. <button type="button" class="linklike" id="get-key">Get a key at tailfuse.com</button></p>
-        <p class="hint">This copy: <span id="license"></span></p>
+        <div id="licensed" class="licensed" hidden>
+          <span class="licensed-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+          <div class="licensed-text">
+            <strong>Licensed to <span id="licensed-to"></span></strong>
+            <span>Unlimited tailnets. Every update included, for good.</span>
+          </div>
+          <button type="button" class="link-btn" id="change-key" aria-expanded="false" aria-controls="activate">Use another key</button>
+        </div>
+        <div id="unlicensed">
+          <p class="hint">Two tailnets are free. More need a license key, which is by optional donation. <button type="button" class="linklike" id="get-key">Get a key at tailfuse.com</button></p>
+          <p class="hint">This copy: <span id="license"></span></p>
+        </div>
         <form id="activate" class="inline-form">
           <label class="field field--grow">
-            <span class="sr-only">License key</span>
-            <input id="license-key" placeholder="Paste your key: tailfuse_…" required autocomplete="off" spellcheck="false" />
+            <span class="sr-only">License key or code</span>
+            <input id="license-key" placeholder="Paste your key or enter a code" required autocomplete="off" spellcheck="false" />
           </label>
-          <button type="submit" class="btn btn--secondary btn--sm">Activate key</button>
+          <button type="submit" class="btn btn--secondary btn--sm">Activate</button>
         </form>
         <p id="license-msg" class="hint" role="status"></p>
       </section>

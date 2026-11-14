@@ -294,3 +294,12 @@ code:empty { display: none; }
 /* the Tailscale app, on the tailnet row it shares */
 .ts-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: var(--t-label); color: var(--muted); }
 .ts-badge .dot { width: 6px; height: 6px; box-shadow: none; }
+
+/* License: the licensed state, a quiet confirmation instead of the key form. */
+.licensed { display: flex; align-items: center; gap: 12px 14px; flex-wrap: wrap; padding: 14px 16px; border-radius: var(--r-md); border: 1px solid color-mix(in oklab, var(--ok) 40%, transparent); background: color-mix(in oklab, var(--ok) 7%, var(--bg)); }
+.licensed[hidden], #unlicensed[hidden], #activate[hidden] { display: none; }
+.licensed-icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: var(--ok); background: color-mix(in oklab, var(--ok) 16%, transparent); }
+.licensed-text { flex: 1 1 220px; min-width: 0; display: grid; gap: 2px; }
+.licensed-text strong { font-weight: 500; color: var(--ink); }
+.licensed-text > span { color: var(--muted); font-size: var(--t-label); }
+#unlicensed { display: grid; gap: 10px; }

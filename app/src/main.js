@@ -180,6 +180,8 @@ function tunnelEntry(t) {
   );
 }
 
+let licenseFormOpen = false;
+
 function render(s) {
   lastState = s;
   $("#power").checked = s.up;
@@ -187,6 +189,13 @@ function render(s) {
   $("#power-label").classList.toggle("on", s.up);
   $("#status").textContent = statusLine(s);
   $("#license").textContent = s.license;
+  const licensed = !!s.licensed_to;
+  $("#licensed").hidden = !licensed;
+  $("#unlicensed").hidden = licensed;
+  if (licensed) $("#licensed-to").textContent = s.licensed_to;
+  // Licensed: the key form stays out of sight until "Use another key".
+  if (licensed && !licenseFormOpen) $("#activate").hidden = true;
+  if (!licensed) $("#activate").hidden = false;
 
   // Browsers only reach the tailnets once the system points them at Tailfuse.
   $("#proxy-note").hidden = !s.proxy_problem;
@@ -210,9 +219,9 @@ function render(s) {
   if (!cliBusy && s.cli) $("#cli-text").textContent = `Installed at ${s.cli}.`;
 
   const count = s.profiles.length;
-  $("#profile-hint").textContent = count === 0 ? "" : count <= 2 ? `${count} of 2 free tailnets used` : `${count} tailnets, licensed`;
+  $("#profile-hint").textContent = count === 0 ? "" : s.licensed_to ? `${count} ${count === 1 ? "tailnet" : "tailnets"}, licensed` : count <= 2 ? `${count} of 2 free tailnets used` : `${count} tailnets`;
   if (!signingIn) {
-    const atLimit = count >= 2 && !/licensed|valid/i.test(s.license || "");
+    const atLimit = count >= 2 && !s.licensed_to;
     $("#signin-title").textContent = count === 0 ? "Add your first tailnet" : "Add another tailnet";
     $("#signin-sub").textContent = atLimit
       ? "Sign in with Tailscale in your browser. A third tailnet needs a license key (by optional donation)."
@@ -421,12 +430,23 @@ if (!invoke) {
     refresh();
   });
 
+  $("#change-key").addEventListener("click", () => {
+    licenseFormOpen = !licenseFormOpen;
+    $("#activate").hidden = !licenseFormOpen;
+    $("#change-key").setAttribute("aria-expanded", String(licenseFormOpen));
+    $("#change-key").textContent = licenseFormOpen ? "Cancel" : "Use another key";
+    if (licenseFormOpen) $("#license-key").focus();
+  });
+
   $("#activate").addEventListener("submit", async (e) => {
     e.preventDefault();
     const msg = $("#license-msg");
     try {
       msg.textContent = sentence(await invoke("activate_license", { key: $("#license-key").value.trim() }));
       $("#license-key").value = "";
+      licenseFormOpen = false;
+      $("#change-key").setAttribute("aria-expanded", "false");
+      $("#change-key").textContent = "Use another key";
     } catch (err) {
       msg.textContent = sentence(err);
     }

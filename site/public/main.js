@@ -286,3 +286,35 @@
     type.addEventListener('pointerleave', function () { has = false; });
   }
 })();
+
+// "Set up with AI": copies a setup prompt for an AI assistant. If the clipboard is refused, the prompt is shown,
+// selected, for a manual copy.
+(function () {
+  'use strict';
+  var btn = document.getElementById('ai-setup');
+  var box = document.getElementById('ai-prompt');
+  var note = document.getElementById('ai-setup-note');
+  if (!btn || !box || !note) return;
+  var label = btn.querySelector('span');
+  var idle = note.textContent;
+  var timer = 0;
+  var done = function () {
+    label.textContent = 'Prompt copied';
+    note.textContent = 'Paste it into Claude, ChatGPT or Cursor. It walks you through the setup.';
+    window.clearTimeout(timer);
+    timer = window.setTimeout(function () { label.textContent = 'Set up with AI'; note.textContent = idle; }, 4000);
+  };
+  var show = function () {
+    box.hidden = false;
+    box.focus();
+    box.select();
+    note.textContent = 'Copy this prompt into your AI assistant.';
+  };
+  btn.addEventListener('click', function () {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(box.value).then(done, show);
+    } else {
+      show();
+    }
+  });
+})();

@@ -11,6 +11,8 @@ use anyhow::Result;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+mod updates;
+
 use std::sync::Arc;
 use tailfuse_core::config::{self, Config, Profile, Tunnel};
 use tailfuse_core::{daemon, license, router, sysproxy};
@@ -59,6 +61,8 @@ struct StateView {
     up: bool,
     pac_url: String,
     license: String,
+    /// Who the active license key belongs to; None without a valid key.
+    licensed_to: Option<String>,
     profiles: Vec<ProfileView>,
     tunnels: Vec<Tunnel>,
     /// Why browsers are not being pointed at Tailfuse, when they are not.
@@ -124,6 +128,11 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
         up,
         pac_url: format!("http://{}/tailfuse.pac", cfg.router.listen),
         license: license::status(cfg.profiles.len(), &cfg.license),
+        licensed_to: if cfg.license.trim().is_empty() {
+            None
+        } else {
+            license::verify(&cfg.license).ok().map(|l| l.email)
+        },
         profiles,
         tunnels: cfg.tunnels.clone(),
         proxy_problem: if up {
@@ -855,7 +864,7 @@ async fn activate_license(state: State<'_, SharedState>, key: String) -> Result<
     cfg.license = key;
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
     Ok(format!(
-        "activated for {} (updates included forever)",
+        "activated for {}. Unlimited tailnets and every update, for good",
         lic.email
     ))
 }
@@ -1079,6 +1088,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -1126,6 +1136,14 @@ pub fn run() {
                 });
             }
             build_tray(app.handle())?;
+            // Updates from GitHub Releases; relaunches only while Tailfuse is off.
+            if let Some(state) = app.try_state::<SharedState>() {
+                let state = Arc::clone(&state);
+                updates::spawn(app.handle().clone(), move || {
+                    let state = Arc::clone(&state);
+                    async move { state.running.lock().await.is_some() }
+                });
+            }
             // Keep the tray menu's profile states fresh.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

@@ -68,6 +68,11 @@ h2 { font-size: clamp(30px, 3.3vw, 48px); line-height: 1.1; font-weight: 500; le
 .notice__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 h1 { margin-top: 16px; max-width: 14em; font-size: clamp(40px, 5vw, 72px); line-height: 1.02; font-weight: 500; letter-spacing: -0.04em; text-wrap: balance; }
 .hero .lead { margin-top: 16px; max-width: 52ch; text-wrap: balance; }
+.btn--ai { gap: 8px; border: 0; font-family: inherit; cursor: pointer; }
+.btn--ai svg { color: var(--accent); flex: none; }
+.hero__note { margin-top: 12px; text-align: center; font-size: 14px; color: var(--muted); min-height: 1.4em; }
+.ai-prompt { display: block; width: min(640px, 100%); height: 220px; margin: 12px auto 0; padding: 14px; border-radius: 12px; border: 1px solid #2a2c30; background: #141517; color: var(--ink); font: 13px/1.5 ui-monospace, monospace; resize: vertical; }
+.ai-prompt[hidden] { display: none; }
 .hero__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; padding-top: 28px; }
 
 .frame {
@@ -278,4 +283,37 @@ h1 { margin-top: 16px; max-width: 14em; font-size: clamp(40px, 5vw, 72px); line-
   .win, .lane.is-on .pulse { animation: none; }
   .lane.is-on .pulse { display: none; }
   * { transition: none !important; }
+}
+
+/* Analytics consent banner (analytics.js) */
+[role="dialog"][aria-label="Analytics consent"] {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 50;
+  max-width: 320px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--panel, #1c1e24);
+  border: 1px solid var(--line, #2b2f39);
+  color: var(--text, #e8eaf0);
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+[role="dialog"][aria-label="Analytics consent"] p { margin: 0 0 10px; }
+[role="dialog"][aria-label="Analytics consent"] button {
+  margin-right: 8px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line, #2b2f39);
+  background: var(--panel-2, #22252d);
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+[role="dialog"][aria-label="Analytics consent"] button[data-consent="allow"] {
+  background: var(--accent, #6b9bff);
+  border-color: var(--accent, #6b9bff);
+  color: #fff;
 }

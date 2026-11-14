@@ -56,6 +56,18 @@
     "macOS": {
       "signingIdentity": "Developer ID Application: Luigi Poole (N7TM93NL4Q)",
       "hardenedRuntime": true
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFEOENFOTU4NkVEMDc0NEYKUldSUGROQnVXT21NSFNjUFZrQXVDSUJTOEFuUzVCR05BbHhWWXdMcElVelhKeXBXQXEwdVBlVVcK",
+      "endpoints": [
+        "https://github.com/ailio-technologies-inc/tailfuse/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

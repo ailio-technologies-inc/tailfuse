@@ -145,8 +145,19 @@
 <p class="lead">Tailfuse is a menu-bar app for macOS, Windows and Linux. It runs one Tailscale node per tailnet and sends each hostname to the tailnet that owns it.</p>
 <div class="hero__actions">
 <a class="btn" href="/download">Download Tailfuse</a>
-<a class="btn btn--quiet" href="#cli">Get the command line</a>
+<button class="btn btn--quiet btn--ai" type="button" id="ai-setup" aria-describedby="ai-setup-note"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg><span>Set up with AI</span></button>
 </div>
+<p class="hero__note" id="ai-setup-note" role="status">Copies a setup prompt for Claude, ChatGPT or Cursor.</p>
+<textarea class="ai-prompt" id="ai-prompt" readonly hidden aria-label="Tailfuse setup prompt">Set up Tailfuse on this computer for me. Tailfuse keeps several Tailscale tailnets online at once and sends each hostname to the tailnet that owns it. Read https://tailfuse.com/llms.txt first and follow it.
+
+1. Check my operating system and whether Tailscale's tailscaled is installed. If it is missing, install it the way Tailscale's docs recommend for my OS.
+2. Install Tailfuse. On macOS: brew install --cask ailio-technologies-inc/tap/tailfuse. Otherwise use https://tailfuse.com/download. Make sure the tailfuse command works in a terminal.
+3. Ask me which tailnets I use and which hostname suffixes each one owns (for example .work.ts.net). Run tailfuse init, then write one profile per tailnet in ~/.config/tailfuse/config.yaml.
+4. Run tailfuse profile login &lt;name&gt; for each tailnet. I will finish each sign-in in my browser.
+5. Run tailfuse up, then tailfuse status. Check one host on each tailnet with tailfuse run curl -sI http://&lt;host&gt;.
+6. If I use Claude Code, offer to add the Tailfuse MCP server: claude mcp add tailfuse -- tailfuse mcp
+
+Ask me before any step that needs my password or changes a system setting. Never send my tailnet names, hosts or keys anywhere except to Tailscale and the commands above.</textarea>
 </div>
 
 <div class="frame wrap">
@@ -414,6 +425,7 @@
 </div>
 </footer>
 
+<script src="/analytics.js" defer></script>
 <script src="/main.js" defer></script>
 </body>
 </html>
