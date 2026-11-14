@@ -59,7 +59,7 @@ function friendly(err) {
     return ["The sign-in ran out of time", "Start it again and finish in the browser page within a few minutes."];
   }
   if (/no profiles defined/i.test(raw)) {
-    return ["Add a tailnet first", "Use Sign in with Tailscale, then turn Tailfuse on."];
+    return ["Add a tailnet first", "Sign in with Tailscale under Your tailnets, then turn Tailfuse on."];
   }
   return ["Something went wrong", sentence(raw)];
 }
@@ -141,7 +141,7 @@ function profileEntry(p, up) {
   const [label, tone] = tailnetState(p, up);
   const ips = p.ips.filter(Boolean);
   // Hover or focus shows these in a card that floats over the list, so nothing below moves.
-  const details = [p.hostname && ["This Mac there", p.hostname], ...ips.map((ip) => [ip.includes(":") ? "IPv6" : "IPv4", ip]), p.account && ["Account", p.account]].filter(Boolean);
+  const details = [p.hostname && ["This Mac's name", p.hostname], ...ips.map((ip) => [ip.includes(":") ? "IPv6" : "IPv4", ip]), p.account && ["Account", p.account]].filter(Boolean);
   const needsSignIn = up && !p.online && !p.paused && !p.error;
   return h("li", { class: "entry entry--tailnet", tabIndex: 0 },
     h("span", { class: `dot${p.online ? " on" : ""}${p.error ? " bad" : ""}` }),
@@ -207,7 +207,7 @@ function render(s) {
   $("#proxy-fix").hidden = !needsYou;
   $("#proxy-why").textContent = needsYou
     ? "Your tailnets are online, but your Mac isn't sending their addresses through Tailfuse yet. Allow Tailfuse to set the system proxy; macOS asks for your password once."
-    : `${sentence(s.proxy_problem || "")} You can still set it by hand: see Advanced, under Settings.`;
+    : `${sentence(s.proxy_problem || "")} You can still set it by hand: see System proxy, under Settings.`;
   $("#pac-url").textContent = s.pac_url;
 
   // The official Tailscale app: shown on the tailnet it shares with Tailfuse; a separate

@@ -230,11 +230,11 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
     // Status line first, the macOS menu-bar convention: what the app is doing
     // right now, then the things, then the actions.
     let header = if !is_up {
-        "Tailfuse — Stopped"
+        "Tailfuse is off"
     } else if any_online {
-        "Tailfuse — Connected"
+        "Tailfuse is connected"
     } else {
-        "Tailfuse — Waiting for sign-in"
+        "Tailfuse is waiting for sign-in"
     };
     if let Ok(item) = MenuItem::with_id(app, "status", header, false, None::<&str>) {
         items.push(Box::new(item));
@@ -256,7 +256,7 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
         let label = if !is_up || online || paused {
             name.clone()
         } else {
-            format!("{name} — Sign in…")
+            format!("Sign in to {name}…")
         };
         // A checkmark means connected; choosing it connects or disconnects.
         if let Ok(item) = CheckMenuItem::with_id(
@@ -277,9 +277,9 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
         items.push(Box::new(show));
     }
     let toggle_label = if is_up {
-        "Stop Tailfuse"
+        "Turn Tailfuse off"
     } else {
-        "Start Tailfuse"
+        "Turn Tailfuse on"
     };
     if let Ok(toggle) = MenuItem::with_id(app, "toggle", toggle_label, true, None::<&str>) {
         items.push(Box::new(toggle));
@@ -327,7 +327,7 @@ async fn login(
 ) -> Result<Option<String>, String> {
     let cfg = state.cfg.lock().await.clone();
     if state.running.lock().await.is_none() {
-        return Err("start tailfuse first".into());
+        return Err("turn Tailfuse on first".into());
     }
     let url = daemon::login_start(&cfg, &name)
         .await
@@ -753,7 +753,7 @@ async fn disconnect_tailscale_app() -> Result<(), String> {
 #[tauri::command]
 async fn import_from_tailscale(state: State<'_, SharedState>) -> Result<String, String> {
     let suffix = daemon::detect_official_tailnet_suffix().await.ok_or_else(|| {
-        "could not read the official Tailscale client's tailnet — is Tailscale installed, running and logged in?"
+        "could not read the Tailscale app's tailnet. Is Tailscale installed, running and signed in?"
             .to_string()
     })?;
     let mut cfg = state.cfg.lock().await;
@@ -778,7 +778,7 @@ async fn import_from_tailscale(state: State<'_, SharedState>) -> Result<String, 
     license::check(cfg.profiles.len(), &cfg.license).map_err(|e| e.to_string())?;
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
     Ok(format!(
-        "imported tailnet {suffix} as profile {name:?} — press Log in to authenticate it"
+        "imported tailnet {suffix} as {name:?}. Press Sign in to connect it"
     ))
 }
 
@@ -790,7 +790,7 @@ async fn add_profile(
 ) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
     if cfg.profiles.contains_key(&name) {
-        return Err(format!("profile {name:?} already exists"));
+        return Err(format!("a tailnet called {name:?} already exists"));
     }
     cfg.profiles.insert(
         name.clone(),
@@ -809,7 +809,7 @@ async fn add_profile(
 async fn remove_profile(state: State<'_, SharedState>, name: String) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
     if cfg.profiles.remove(&name).is_none() {
-        return Err(format!("no such profile {name:?}"));
+        return Err(format!("there is no tailnet called {name:?}"));
     }
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
     Ok(())
@@ -841,7 +841,7 @@ async fn remove_tunnel(state: State<'_, SharedState>, name: String) -> Result<()
     let before = cfg.tunnels.len();
     cfg.tunnels.retain(|t| t.name != name);
     if cfg.tunnels.len() == before {
-        return Err(format!("no tunnel {name:?}"));
+        return Err(format!("there is no local port called {name:?}"));
     }
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
     Ok(())
@@ -966,7 +966,7 @@ fn quit_app(app: AppHandle) {
 }
 
 fn build_tray(app: &AppHandle) -> Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show Tailfuse", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Open Tailfuse", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Tailfuse", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     // The menu-bar glyph: full-colour ochre nodes, readable on light and dark bars.

@@ -85,7 +85,7 @@
         <div class="pane-head">
           <h2 id="tunnels-h">Local ports</h2>
         </div>
-        <p class="hint">For apps that can't use a proxy, such as a database client: a port on this computer that leads to one service on a tailnet.</p>
+        <p class="hint">A port on this computer that leads to one service on a tailnet, for apps that can't use a proxy, such as a database client.</p>
         <ul id="tunnels" class="list"></ul>
         <div class="pane-tools">
           <button id="show-add-tunnel" type="button" class="btn btn--secondary btn--sm" aria-expanded="false" aria-controls="add-tunnel">Add a local port</button>
@@ -120,12 +120,12 @@
           <span class="licensed-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
           <div class="licensed-text">
             <strong>Licensed to <span id="licensed-to"></span></strong>
-            <span>Unlimited tailnets. Every update included, for good.</span>
+            <span>Unlimited tailnets, with every update included for good.</span>
           </div>
           <button type="button" class="link-btn" id="change-key" aria-expanded="false" aria-controls="activate">Use another key</button>
         </div>
         <div id="unlicensed">
-          <p class="hint">Two tailnets are free. More need a license key, which is by optional donation. <button type="button" class="linklike" id="get-key">Get a key at tailfuse.com</button></p>
+          <p class="hint">Two tailnets are free. More need a license key, which you get for an optional donation. <button type="button" class="linklike" id="get-key">Get a key at tailfuse.com</button></p>
           <p class="hint">This copy: <span id="license"></span></p>
         </div>
         <form id="activate" class="inline-form">
@@ -184,7 +184,7 @@
       <form method="dialog" class="dialog-body">
         <svg class="dialog-mark" viewBox="120 146 272 220" width="40" height="32" aria-hidden="true"><circle cx="150" cy="176" r="27" fill="#eff0f1"/><circle cx="150" cy="256" r="27" fill="#eff0f1"/><circle cx="150" cy="336" r="27" fill="#eff0f1"/><circle cx="214" cy="176" r="27" fill="#eff0f1"/><circle cx="214" cy="336" r="27" fill="#eff0f1"/><circle cx="298" cy="176" r="27" fill="#ff4a1f"/><circle cx="362" cy="176" r="27" fill="#ff4a1f"/><circle cx="298" cy="336" r="27" fill="#ff4a1f"/><circle cx="362" cy="256" r="27" fill="#ff4a1f"/><circle cx="362" cy="336" r="27" fill="#ff4a1f"/><rect x="191" y="229" width="130" height="54" rx="27" fill="#ff4a1f"/></svg>
         <h2 id="permission-title">Tailfuse needs your permission</h2>
-        <p>To reach your tailnets, Tailfuse sets your Mac’s system proxy. Apps that follow the system setting, including your browsers, then send tailnet addresses through Tailfuse and everything else directly.</p>
+        <p>To reach your tailnets, Tailfuse sets your Mac's system proxy. Apps that follow the system setting, including your browsers, then send tailnet addresses through Tailfuse and everything else directly.</p>
         <p class="hint">macOS will ask for your password next. You only do this once.</p>
         <div class="dialog-actions">
           <button value="later" class="btn btn--secondary btn--sm">Not now</button>

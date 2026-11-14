@@ -1,6 +1,6 @@
 # Tailfuse
 
-> Tailfuse connects one machine to several Tailscale tailnets at once. It runs one userspace Tailscale node per tailnet and a loopback router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it. It is a menu-bar app and a `tailfuse` command-line tool for macOS, Windows and Linux. Free for two tailnets; a license key for more is by optional donation, from $0.
+> Tailfuse connects one machine to several Tailscale tailnets at once. It runs one userspace Tailscale node per tailnet and a loopback router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it. It is a menu-bar app and a `tailfuse` command-line tool for macOS, Windows and Linux. It is free for two tailnets; a license key for more is by optional donation, from $0.
 
 Tailfuse is made by Ailio Technologies Inc. (https://ailio.ca). It is an independent tool, not affiliated with or endorsed by Tailscale Inc. The source is MIT licensed. `tailscaled` and `tailscale` are separate Tailscale binaries under the Tailscale terms.
 

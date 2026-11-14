@@ -14,7 +14,7 @@ No VM, no daemon conflicts, no account switching. macOS, Windows and Linux.</p>
 
 <p align="center"><img src="docs/screenshots/app.png" width="560" alt="The Tailfuse window: three tailnets, two connected, a local port to a database, and a check for where an address goes."></p>
 
-One embedded Tailscale node (userspace-mode `tailscaled`) per tailnet, a loopback router that dispatches traffic by hostname suffix, and a menu-bar app to drive it all.
+Tailfuse runs one embedded Tailscale node (userspace-mode `tailscaled`) per tailnet and a loopback router that dispatches traffic by hostname suffix. A menu-bar app drives both.
 
 <table>
 <tr>
@@ -37,7 +37,7 @@ One embedded Tailscale node (userspace-mode `tailscaled`) per tailnet, a loopbac
 
 ## Why not two Tailscale daemons?
 
-Two full daemons fight over routes, `/etc/resolv.conf`, and firewall rules. tailfuse sidesteps this entirely: each tailnet runs in **userspace networking mode** — no TUN, no routes, no DNS changes. Your official Tailscale client (if installed) keeps owning the primary tailnet, untouched.
+Two full daemons fight over routes, `/etc/resolv.conf`, and firewall rules. Tailfuse avoids that by running each tailnet in userspace networking mode, which uses no TUN device and changes no routes or DNS settings. If the official Tailscale client is installed, it keeps the primary tailnet and Tailfuse leaves it alone.
 
 ## Install
 
@@ -49,7 +49,7 @@ winget install ailio-technologies-inc.tailfuse      # Windows
 
 Or download the app for your platform from [tailfuse.com/download](https://tailfuse.com/download). Tailfuse runs Tailscale's own `tailscaled`, which must be installed.
 
-**Set it up with an AI assistant:** the *Set up with AI* button on [tailfuse.com](https://tailfuse.com) copies a prompt for Claude, ChatGPT or Cursor that installs Tailfuse, writes your config and signs you in to each tailnet. The full reference for assistants is at [tailfuse.com/llms.txt](https://tailfuse.com/llms.txt).
+To set it up with an AI assistant, use the *Set up with AI* button on [tailfuse.com](https://tailfuse.com). It copies a prompt for Claude, ChatGPT or Cursor that installs Tailfuse, writes your config and signs you in to each tailnet. The full reference for assistants is at [tailfuse.com/llms.txt](https://tailfuse.com/llms.txt).
 
 ## Quick start
 
@@ -61,7 +61,7 @@ tailfuse profile login work
 tailfuse up                                     # router + system PAC
 ```
 
-Then just use names: `https://nas.home-lab.ts.net` and `https://wiki.work.ts.net` both load, in adjacent tabs, each on its own tailnet. `Ctrl-C` removes the PAC.
+Then use the hostnames directly: `https://nas.home-lab.ts.net` and `https://wiki.work.ts.net` load in adjacent tabs, each on its own tailnet. `Ctrl-C` removes the PAC.
 
 ```yaml
 # ~/.config/tailfuse/config.yaml
@@ -83,7 +83,7 @@ tunnels:
     target: db.work.ts.net:5432  # `psql -h 127.0.0.1 -p 5432`
 ```
 
-**Suffix ownership is strict** — each suffix belongs to exactly one profile, overlaps are rejected at validation, and hostnames no profile owns are *refused*, never routed elsewhere. That rejection is the isolation guarantee between tailnets.
+Suffix ownership is strict. Each suffix belongs to exactly one profile, and validation rejects overlapping suffixes. A hostname no profile owns is refused instead of being routed elsewhere, and that refusal is what keeps the tailnets isolated from each other.
 
 ## Usage
 
@@ -101,16 +101,16 @@ tunnels:
 
 ## How it works
 
-- **Profiles** — one `tailscaled --tun=userspace-networking` subprocess per tailnet, with its own state dir, socket, and dedicated local SOCKS5 port. Nothing touches the kernel routing table.
-- **Router** — a single loopback listener accepts both SOCKS5 and HTTP CONNECT, matches the destination hostname against suffix ownership (longest match wins), and forwards to that profile's SOCKS5. Unowned names get a refusal, never a fallback.
-- **PAC** — a generated proxy auto-config routes only owned suffixes through the router and everything else direct; served live at `/tailfuse.pac` and applied to the OS on `up`.
-- **Isolation** — profiles share no state, sockets, or routes; suffix overlaps are rejected at config validation.
+- **Profiles:** one `tailscaled --tun=userspace-networking` subprocess per tailnet, with its own state dir, socket, and dedicated local SOCKS5 port. Nothing touches the kernel routing table.
+- **Router:** a single loopback listener accepts both SOCKS5 and HTTP CONNECT, matches the destination hostname against suffix ownership (longest match wins), and forwards to that profile's SOCKS5. A name no profile owns is refused, with no fallback.
+- **PAC:** a generated proxy auto-config sends only owned suffixes through the router and everything else direct. It is served live at `/tailfuse.pac` and applied to the OS on `up`.
+- **Isolation:** profiles share no state, sockets, or routes, and config validation rejects overlapping suffixes.
 
 ## Desktop app
 
-A Tauri menu-bar app (`app/`) wraps the same core. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL, which it asks for once and never overwrites if it isn't its own.
+A Tauri menu-bar app (`app/`) wraps the same core. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL. It asks once before setting it, and never overwrites a PAC URL it did not set.
 
-**Updates are automatic.** The app checks the latest GitHub release's `latest.json` a minute after launch and every six hours, installs a newer version in the background, and relaunches into it once Tailfuse is off, so a session is never cut. Every update is signed with the Tailfuse updater key and verified against the public key built into the app; there is no update server beyond GitHub Releases.
+The app updates itself. It checks the latest GitHub release's `latest.json` a minute after launch and every six hours, installs a newer version in the background, and relaunches into it once Tailfuse is off, so a session is never cut. Every update is signed with the Tailfuse updater key and verified against the public key built into the app; there is no update server beyond GitHub Releases.
 
 ```sh
 cd app && npm install && npm run tauri dev   # develop
@@ -155,7 +155,7 @@ It works against the running Tailfuse (the app, or `tailfuse up`).
 
 ## Pricing
 
-**Free for up to 2 tailnet profiles — forever.** More profiles need a license key, which is by optional donation: get one at [tailfuse.com](https://tailfuse.com/#pricing) for any amount from $0 up (every future update included). Keys are signed and verified offline — no phone-home, no account, no telemetry.
+Tailfuse is free forever for up to 2 tailnet profiles. More profiles need a license key, which is by optional donation: get one at [tailfuse.com](https://tailfuse.com/#pricing) for any amount from $0 up, and it includes every future update. Keys are signed and verified offline, so there is no phone-home, no account and no telemetry.
 
 ```sh
 tailfuse license activate tailfuse_eyJ...__...
@@ -163,4 +163,4 @@ tailfuse license activate tailfuse_eyJ...__...
 
 ## License
 
-MIT — see [LICENSE](LICENSE). `tailscaled`/`tailscale` are separate Tailscale binaries, subject to the Tailscale terms; tailfuse is an independent tool, not affiliated with or endorsed by Tailscale Inc.
+MIT; see [LICENSE](LICENSE). `tailscaled`/`tailscale` are separate Tailscale binaries, subject to the Tailscale terms. Tailfuse is an independent tool, not affiliated with or endorsed by Tailscale Inc.
