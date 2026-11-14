@@ -104,6 +104,24 @@ fn civil_from_days(z: i64) -> (i32, u32, u32) {
     (if m <= 2 { y + 1 } else { y } as i32, m as u32, d as u32)
 }
 
+/// Named codes for groups we share Tailfuse with: typing the code is the same
+/// as pasting its signed key, which is checked like any other.
+const CODES: &[(&str, &str)] = &[(
+    "CHANGE_ORG",
+    "tailfuse_eyJlbWFpbCI6IkNoYW5nZS5vcmciLCJtYXhfcHJvZmlsZXMiOjAsInVwZGF0ZXNfdW50aWwiOiIyMDI3LTExLTEzIiwiaXNzdWVkX2F0IjoiMjAyNi0xMS0xNFQwMDowMDowMFoiLCJrZXlfaWQiOiJ0Zi1jaGFuZ2Utb3JnIn0__MYPXX30OzeDNt0U3i8Szq20ZVP5P0pHPhuOcI51osry8DYy6dpGlEypPs4QcEv_cjCQzjTb0lj02HnyGOHLABA",
+)];
+
+/// A named code's signed key, or the input unchanged.
+fn expand(key: &str) -> String {
+    let k = key.trim();
+    let norm = k.to_ascii_uppercase().replace(['-', '.', ' '], "_");
+    CODES
+        .iter()
+        .find(|(code, _)| *code == norm)
+        .map(|(_, signed)| signed.to_string())
+        .unwrap_or_else(|| k.to_string())
+}
+
 /// Parse and verify a key of the form `tailfuse_<payload_b64>__<sig_b64>`
 /// against the embedded vendor key.
 pub fn verify(key: &str) -> Result<License> {
@@ -115,6 +133,7 @@ pub fn verify(key: &str) -> Result<License> {
 
 /// Verify against an explicit public key (tests, tooling).
 pub fn verify_with(key: &str, pubkey: &str) -> Result<License> {
+    let key = expand(key);
     let body = key
         .trim()
         .strip_prefix("tailfuse_")
@@ -192,6 +211,17 @@ pub fn status(n_profiles: usize, key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn change_org_code_unlocks() {
+        for code in ["CHANGE_ORG", "change_org", "change.org", " Change-Org "] {
+            let lic = verify(code).expect("code verifies");
+            assert_eq!(lic.email, "Change.org");
+            assert_eq!(lic.max_profiles, 0);
+            check(10, code).expect("unlimited profiles");
+        }
+        assert!(verify("CHANGE").is_err());
+    }
 
     fn make_key(max_profiles: usize, email: &str) -> (String, String, String) {
         let (priv_b64, pub_b64) = generate_keypair();
