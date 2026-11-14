@@ -187,7 +187,9 @@ async fn start_inner(state: &AppState) -> Result<(), String> {
     // PAC the browsers fetch next already lists what they serve.
     for _ in 0..8 {
         let learned = daemons.learn().await;
-        let any = learned.iter().any(|(_, ips, d)| !ips.is_empty() || !d.is_empty());
+        let any = learned
+            .iter()
+            .any(|(_, ips, d)| !ips.is_empty() || !d.is_empty());
         for (name, ips, domains) in &learned {
             r.routes().set_learned(name, ips, domains);
         }
@@ -207,7 +209,11 @@ async fn start_inner(state: &AppState) -> Result<(), String> {
             format!("{e:#}")
         }
     };
-    *running = Some(Running { daemons, shutdown, routes: r.routes() });
+    *running = Some(Running {
+        daemons,
+        shutdown,
+        routes: r.routes(),
+    });
     Ok(())
 }
 
@@ -727,7 +733,7 @@ async fn set_tailnet(
     on: bool,
 ) -> Result<(), String> {
     if on && state.running.lock().await.is_none() {
-        start_inner(&state).await?;
+        start_with_only(&state, &name).await?;
         // The node needs a moment before it answers.
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     }
@@ -749,15 +755,34 @@ async fn set_tailnet(
     }
     // Remember the choice so starting Tailfuse (or connecting another
     // tailnet) keeps this one the way the switch left it.
-    {
-        let mut cfg = state.cfg.lock().await;
-        if let Some(prof) = cfg.profiles.get_mut(&name) {
-            prof.connected = on;
-            let _ = cfg.save(&state.cfg_path);
-        }
-    }
+    remember_connected(&state, &name, on).await;
     refresh_tray(&app);
     Ok(())
+}
+
+/// Turning on one tailnet while Tailfuse is off starts Tailfuse with only
+/// that tailnet connected; the others come up switched off.
+async fn start_with_only(state: &AppState, name: &str) -> Result<(), String> {
+    if state.running.lock().await.is_some() {
+        return Ok(());
+    }
+    {
+        let mut cfg = state.cfg.lock().await;
+        for (n, prof) in cfg.profiles.iter_mut() {
+            prof.connected = n == name;
+        }
+        cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+    }
+    start_inner(state).await
+}
+
+/// Remember a tailnet's switch so starting Tailfuse keeps it that way.
+async fn remember_connected(state: &AppState, name: &str, on: bool) {
+    let mut cfg = state.cfg.lock().await;
+    if let Some(prof) = cfg.profiles.get_mut(name) {
+        prof.connected = on;
+        let _ = cfg.save(&state.cfg_path);
+    }
 }
 
 /// Disconnect the official Tailscale app; it stays signed in.
@@ -881,20 +906,27 @@ async fn activate_license(state: State<'_, SharedState>, key: String) -> Result<
     license::check(cfg.profiles.len(), &key).map_err(|e| e.to_string())?;
     cfg.license = key;
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
-    Ok(format!(
-        "activated for {}. Unlimited tailnets",
-        lic.email
-    ))
+    Ok(format!("activated for {}. Unlimited tailnets", lic.email))
 }
 
 #[tauri::command]
 async fn test_host(state: State<'_, SharedState>, host: String) -> Result<String, String> {
     // While Tailfuse runs, ask the router itself: it also knows the domains
     // and devices each tailnet serves. Otherwise only the configured suffixes.
-    let routes = state.running.lock().await.as_ref().map(|r| r.routes.clone());
+    let routes = state
+        .running
+        .lock()
+        .await
+        .as_ref()
+        .map(|r| r.routes.clone());
     let owner = match routes {
         Some(routes) => routes.resolve_owner(&host).await.map(|(n, _)| n),
-        None => state.cfg.lock().await.owner(&host).map(|(n, _)| n.to_string()),
+        None => state
+            .cfg
+            .lock()
+            .await
+            .owner(&host)
+            .map(|(n, _)| n.to_string()),
     };
     Ok(match owner {
         Some(name) => format!("{host} → profile {name:?}"),
@@ -1005,7 +1037,10 @@ fn toggle_panel(app: &AppHandle) {
 fn fit_panel(app: AppHandle, height: f64) {
     if let Some(panel) = app.get_webview_window("panel") {
         let h = (height + 12.0).clamp(120.0, 640.0);
-        let _ = panel.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 340.0, height: h }));
+        let _ = panel.set_size(tauri::Size::Logical(tauri::LogicalSize {
+            width: 340.0,
+            height: h,
+        }));
     }
 }
 
@@ -1098,13 +1133,37 @@ fn build_tray(app: &AppHandle) -> Result<()> {
                                 // Connected: disconnect it.
                                 daemon::set_connected(&name, false)
                                     .await
-                                    .map_err(|e| format!("{e:#}"))
+                                    .map_err(|e| format!("{e:#}"))?;
+                                remember_connected(&state, &name, false).await;
+                                Ok::<(), String>(())
                             } else {
-                                start_inner(&state).await?;
-                                if paused {
-                                    daemon::set_connected(&name, true)
-                                        .await
-                                        .map_err(|e| format!("{e:#}"))
+                                let was_off = state.running.lock().await.is_none();
+                                start_with_only(&state, &name).await?;
+                                if was_off {
+                                    // Started with only this one; give the node a moment.
+                                    tokio::time::sleep(std::time::Duration::from_millis(1500))
+                                        .await;
+                                }
+                                // A signed-in node just connects; one that needs a
+                                // sign-in (never signed in, or signed out) gets it.
+                                let connected = if paused || was_off {
+                                    match daemon::set_connected(&name, true).await {
+                                        Ok(()) => true,
+                                        Err(e)
+                                            if format!("{e:#}")
+                                                .to_lowercase()
+                                                .contains("login") =>
+                                        {
+                                            false
+                                        }
+                                        Err(e) => return Err(format!("{e:#}")),
+                                    }
+                                } else {
+                                    false
+                                };
+                                if connected {
+                                    remember_connected(&state, &name, true).await;
+                                    Ok(())
                                 } else {
                                     // Never signed in (or signed out): run the browser sign-in.
                                     let cfg = state.cfg.lock().await.clone();
