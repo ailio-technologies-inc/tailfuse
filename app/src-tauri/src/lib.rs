@@ -819,6 +819,51 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Toggle the custom menu-bar panel: position it under the tray icon, show
+/// and focus it — or hide it when it is open.
+fn toggle_panel(app: &AppHandle) {
+    let Some(panel) = app.get_webview_window("panel") else {
+        return;
+    };
+    if panel.is_visible().unwrap_or(false) {
+        let _ = panel.hide();
+        return;
+    }
+    // Anchor the panel's top center under the tray icon (macOS; elsewhere the
+    // window opens wherever the compositor puts it).
+    #[cfg(target_os = "macos")]
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        if let Ok(Some(rect)) = tray.rect() {
+            if let Ok(size) = panel.outer_size() {
+                let (tx, ty) = match rect.position {
+                    tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                    tauri::Position::Logical(l) => (l.x, l.y),
+                };
+                let (tw, th) = match rect.size {
+                    tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
+                    tauri::Size::Logical(s) => (s.width, s.height),
+                };
+                let x = (tx + tw / 2.0 - size.width as f64 / 2.0).max(8.0);
+                let y = ty + th + 2.0;
+                let _ =
+                    panel.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
+            }
+        }
+    }
+    let _ = panel.show();
+    let _ = panel.set_focus();
+}
+
+#[tauri::command]
+fn open_main_window(app: AppHandle) {
+    show_main_window(&app);
+}
+
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
 fn build_tray(app: &AppHandle) -> Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Tailfuse", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Tailfuse", true, None::<&str>)?;
@@ -827,6 +872,7 @@ fn build_tray(app: &AppHandle) -> Result<()> {
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-36.png"))?;
     let builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
+        .show_menu_on_left_click(false)
         .tooltip("Tailfuse")
         .icon(icon)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -915,7 +961,9 @@ fn build_tray(app: &AppHandle) -> Result<()> {
                 ..
             } = event
             {
-                show_main_window(tray.app_handle());
+                // Left click: the custom panel. The native menu stays on
+                // right click.
+                toggle_panel(tray.app_handle());
             }
         });
     let _tray = builder.build(app)?;
@@ -967,6 +1015,17 @@ pub fn run() {
                     }
                 });
             }
+            // The menu-bar panel hides as soon as focus leaves it.
+            if let Some(w) = app.get_webview_window("panel") {
+                let handle = app.handle().clone();
+                w.on_window_event(move |event| {
+                    if matches!(event, WindowEvent::Focused(false)) {
+                        if let Some(panel) = handle.get_webview_window("panel") {
+                            let _ = panel.hide();
+                        }
+                    }
+                });
+            }
             build_tray(app.handle())?;
             // Keep the tray menu's profile states fresh.
             let handle = app.handle().clone();
@@ -998,6 +1057,8 @@ pub fn run() {
             test_host,
             get_autostart,
             set_autostart,
+            open_main_window,
+            quit_app,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tailfuse")

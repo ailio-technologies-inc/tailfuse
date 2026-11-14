@@ -19,6 +19,23 @@
         "fullscreen": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
+      },
+      {
+        "label": "panel",
+        "width": 340,
+        "height": 400,
+        "minWidth": 340,
+        "minHeight": 280,
+        "resizable": false,
+        "maximizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false,
+        "shadow": true
       }
     ],
     "security": {

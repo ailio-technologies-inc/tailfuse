@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" data-type="software" data-radius="soft">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tailfuse</title>
+    <link rel="stylesheet" href="assets/kit/system.css" />
+    <link rel="stylesheet" href="assets/kit/motion.css" />
+    <link rel="stylesheet" href="assets/fonts/fonts.css" />
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <div class="panel">
+      <header class="p-head">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+          <circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="6" r="2.6" /><circle cx="18" cy="18" r="2.6" />
+          <path d="M8.3 10.8 15.7 7.2M8.3 13.2 15.7 16.8" />
+        </svg>
+        <strong>Tailfuse</strong>
+        <span id="state" class="pill">Stopped</span>
+        <label class="switch" title="Start or stop Tailfuse">
+          <input type="checkbox" id="power" aria-label="Start or stop Tailfuse" />
+          <span class="slider"></span>
+        </label>
+      </header>
+
+      <ul id="profiles" class="list"></ul>
+      <p id="empty" class="hint" hidden>No tailnets yet — open Tailfuse to add one.</p>
+
+      <footer class="p-foot">
+        <button id="open" class="btn btn--secondary btn--sm">Open Tailfuse</button>
+        <button id="quit" class="btn btn--sm btn--ghost">Quit</button>
+      </footer>
+    </div>
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

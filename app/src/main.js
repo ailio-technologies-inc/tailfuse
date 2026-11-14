@@ -1,6 +1,14 @@
 // tailfuse window. No bundler: the app exposes Tauri on window.__TAURI__ (withGlobalTauri in
 // tauri.conf.json). Opened from a local dev server instead (a design preview in a browser), it
 // falls back to preview-stub.js; inside the app that fallback is never taken.
+
+// The menu-bar panel is a second webview that loads this same index; send it to
+// its own page before anything else runs.
+if (window.__TAURI__?.webviewWindow?.getCurrentWebviewWindow) {
+  const me = await window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
+  if (me.label === "panel") location.replace("panel.html");
+}
+
 const tauri = window.__TAURI__?.core;
 const isPreview = !tauri && location.protocol === "http:" && location.port !== "";
 const invoke = tauri ? tauri.invoke : isPreview ? (await import("./preview-stub.js")).invoke : null;
