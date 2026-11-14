@@ -10,6 +10,7 @@
 //                      Its public half is PUBKEY in crates/tailfuse-core/src/license.rs.
 //   STRIPE_SECRET_KEY  Stripe secret or restricted key (Checkout Sessions: write).
 // Local runs only (.dev.vars): SITE_ORIGIN, the dev server's own address.
+//   STRIPE_WEBHOOK_SECRET  signing secret of the Stripe webhook that posts to /api/stripe-webhook.
 // Binding: EMAIL (send_email), used to email a donor their key from license@tailfuse.com.
 
 const MAX_DONATION_USD = 1000;
@@ -164,6 +165,62 @@ async function requestLicense(request, env, origin) {
   return json({ url: session.body.url });
 }
 
+// Emails the key for a paid session unless it already went out; the session's metadata remembers.
+async function emailKeyOnce(env, session, email, key, issuedAt) {
+  if (session.metadata?.key_emailed === '1') return true;
+  const sent = await emailKey(env, email, key, new Date(issuedAt.getTime() + YEAR_MS).toISOString().slice(0, 10));
+  if (sent) await stripe(env, `checkout/sessions/${session.id}`, { 'metadata[key_emailed]': '1' }).catch(() => {});
+  return sent;
+}
+
+// Checks a Stripe-Signature header (t=<unix>,v1=<hex hmac of "t.body">) against the signing secret.
+export async function verifyStripeSignature(secret, header, body, nowSeconds) {
+  const parts = Object.fromEntries(String(header ?? '').split(',').map((p) => p.split('=').map((x) => x.trim())).filter((p) => p.length === 2 && p[0] !== 'v1'));
+  const given = String(header ?? '').split(',').map((p) => p.trim()).filter((p) => p.startsWith('v1=')).map((p) => p.slice(3));
+  const t = Number(parts.t);
+  if (!Number.isFinite(t) || Math.abs(nowSeconds - t) > 300 || given.length === 0) return false;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${parts.t}.${body}`)));
+  const want = [...mac].map((b) => b.toString(16).padStart(2, '0')).join('');
+  // Constant-time comparison against each candidate.
+  return given.some((sig) => {
+    if (sig.length !== want.length) return false;
+    let diff = 0;
+    for (let i = 0; i < want.length; i += 1) diff |= sig.charCodeAt(i) ^ want.charCodeAt(i);
+    return diff === 0;
+  });
+}
+
+// POST /api/stripe-webhook: Stripe says a donation was paid, so the donor's key goes out by email
+// whatever their browser does. A $0 key never reaches Stripe and is only shown on the page.
+async function stripeWebhook(request, env) {
+  if (!env.STRIPE_WEBHOOK_SECRET || !env.LICENSE_PRIVKEY || !env.STRIPE_SECRET_KEY) return json({ error: 'Webhook not configured.' }, 503);
+  const body = await request.text();
+  const ok = await verifyStripeSignature(env.STRIPE_WEBHOOK_SECRET, request.headers.get('stripe-signature'), body, Math.floor(Date.now() / 1000));
+  if (!ok) return json({ error: 'Bad signature.' }, 400);
+  let event;
+  try {
+    event = JSON.parse(body);
+  } catch {
+    return json({ error: 'Bad payload.' }, 400);
+  }
+  if (event.type !== 'checkout.session.completed' && event.type !== 'checkout.session.async_payment_succeeded') return json({ received: true });
+  const id = event.data?.object?.id ?? '';
+  if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(id)) return json({ received: true });
+  // Read the session back from Stripe: its current state, not the event's copy.
+  const session = await stripe(env, `checkout/sessions/${id}`);
+  if (!session.ok) return json({ error: 'Session lookup failed.' }, 502);
+  const s = session.body;
+  if (s.metadata?.product !== 'tailfuse-license' || s.payment_status !== 'paid') return json({ received: true });
+  const email = cleanEmail(s.customer_details?.email ?? s.customer_email);
+  if (!email) return json({ received: true });
+  const issuedAt = new Date(s.created * 1000);
+  const key = await signLicense(env.LICENSE_PRIVKEY, email, issuedAt);
+  const sent = await emailKeyOnce(env, s, email, key, issuedAt);
+  // A failed send answers 500 so Stripe tries the event again later.
+  return sent ? json({ received: true, emailed: true }) : json({ error: 'Email not sent.' }, 500);
+}
+
 // GET /api/license?session_id=cs_...: the key for a paid Checkout session.
 async function claimLicense(url, env) {
   if (!env.LICENSE_PRIVKEY || !env.STRIPE_SECRET_KEY) return json({ error: 'License keys are not being issued yet.' }, 503);
@@ -179,11 +236,10 @@ async function claimLicense(url, env) {
   const issuedAt = new Date(session.body.created * 1000);
   const key = await signLicense(env.LICENSE_PRIVKEY, email, issuedAt);
   // Email the key once per donation; the session's own metadata remembers that it went out.
-  let emailed = session.body.metadata?.key_emailed === '1';
-  if (!emailed) {
-    emailed = await emailKey(env, email, key, new Date(issuedAt.getTime() + YEAR_MS).toISOString().slice(0, 10));
-    if (emailed) await stripe(env, `checkout/sessions/${id}`, { 'metadata[key_emailed]': '1' }).catch(() => {});
-  }
+  // With the webhook set up, Stripe's own event sends the email (it arrives even if this page
+  // never loads); otherwise this visit sends it, once.
+  let emailed = Boolean(env.STRIPE_WEBHOOK_SECRET) || session.body.metadata?.key_emailed === '1';
+  if (!emailed) emailed = await emailKeyOnce(env, session.body, email, key, issuedAt);
   return json({ key, email, emailed });
 }
 
@@ -242,7 +298,20 @@ async function download(request, url, ctx) {
   if (!suffix) return Response.redirect(RELEASES, 302);
   const assets = await latestAssets(ctx).catch(() => []);
   const asset = assets.find((a) => typeof a.name === 'string' && a.name.startsWith(prefix) && a.name.endsWith(suffix));
-  return Response.redirect(asset?.browser_download_url ?? RELEASES, 302);
+  if (!asset?.browser_download_url) return Response.redirect(RELEASES, 302);
+  // Stream the file from GitHub's CDN through tailfuse.com, so the visitor stays on this site and
+  // the browser saves the file at once. GitHub still serves the bytes; the Worker only relays them.
+  const upstream = await fetch(asset.browser_download_url, { headers: { 'user-agent': 'tailfuse-site' }, redirect: 'follow' });
+  if (!upstream.ok || !upstream.body) return Response.redirect(asset.browser_download_url, 302);
+  const headers = new Headers({
+    'content-type': upstream.headers.get('content-type') || 'application/octet-stream',
+    'content-disposition': `attachment; filename="${asset.name}"`,
+    'cache-control': 'public, max-age=300',
+    'x-content-type-options': 'nosniff',
+  });
+  const length = upstream.headers.get('content-length');
+  if (length) headers.set('content-length', length);
+  return new Response(upstream.body, { status: 200, headers });
 }
 
 export default {
@@ -261,6 +330,7 @@ export default {
         if (url.pathname === '/api/status' && request.method === 'GET') {
           return json({ licenses: Boolean(env.LICENSE_PRIVKEY), donations: Boolean(env.LICENSE_PRIVKEY && env.STRIPE_SECRET_KEY) });
         }
+        if (url.pathname === '/api/stripe-webhook' && request.method === 'POST') return await stripeWebhook(request, env);
         if (url.pathname === '/api/license' && request.method === 'POST') return await requestLicense(request, env, siteOrigin(env, url));
         if (url.pathname === '/api/license' && request.method === 'GET') return await claimLicense(url, env);
         return json({ error: 'Not found.' }, 404);
