@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Screenshots of the real app UI for the README (docs/screenshots/) and tailfuse.com (site/public/shots/).
 # The app's own index.html and panel.html are rendered in headless Chrome with the preview stub's ?shot state
-# (app/src/preview-stub.js: three tailnets, licensed, no notices), inside a macOS-style window frame, at 2x.
+# (scripts/preview-stub.js: three tailnets, licensed, no notices), inside a macOS-style window frame, at 2x.
 #
 #   scripts/screenshots.sh
 set -euo pipefail
@@ -13,6 +13,8 @@ PORT=${PORT:-8797}
 WORK=$(mktemp -d)
 trap 'kill "$SERVER" 2>/dev/null || true; rm -rf "$WORK"' EXIT
 cp -R "$ROOT/app/src" "$WORK/www"
+# The stub stays out of app/src in git (that folder ships inside the app); its tracked copy is here.
+cp "$ROOT/scripts/preview-stub.js" "$WORK/www/preview-stub.js"
 
 # frame.html?page=index.html&w=720&h=820: the page in an iframe, as a window with traffic lights and a shadow.
 cat > "$WORK/www/frame.html" <<'HTML'
