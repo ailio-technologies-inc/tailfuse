@@ -38,8 +38,11 @@ body { display: flex; flex-direction: column; overflow: hidden; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: calc(env(titlebar-area-inset-top, 0px) + 9px) 16px 9px 16px;
-  padding-left: max(16px, env(titlebar-area-inset-left, 78px));
+  /* a standard 30px macOS title bar: the traffic lights sit at its vertical
+     centre, and so do the brand and the switch */
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px 0 80px;
   border-bottom: 1px solid var(--line);
   flex: none;
 }
@@ -268,3 +271,9 @@ code:empty { display: none; }
 .icon-btn.is-armed { color: var(--bad); background: color-mix(in oklab, var(--bad) 12%, transparent); }
 .icon-btn:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
 .state { background: none; border: 0; padding: 0; }
+
+.brand h1 { line-height: 1; }
+.brand-mark { display: block; }
+.titlebar h1 { font-size: 14px; }
+.titlebar .brand-mark { width: 19px; height: 15px; }
+.titlebar .switch { transform: scale(.84); transform-origin: right center; }

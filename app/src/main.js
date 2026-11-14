@@ -66,15 +66,15 @@ function friendly(err) {
 
 // One place for things that went wrong: in the window, and as a system notification when the
 // window is not the one in front.
-let errorTimer = 0;
 function showError(err) {
   const [title, text] = friendly(err);
-  $("#error-title").textContent = title;
-  $("#error-text").textContent = text;
-  $("#error").hidden = false;
-  clearTimeout(errorTimer);
-  errorTimer = setTimeout(() => ($("#error").hidden = true), 15000);
-  if (!document.hasFocus()) invoke("notify_user", { title, body: text }).catch(() => {});
+  // A native alert while the window is in front; a system notification when it isn't.
+  const cmd = document.hasFocus() ? "alert_user" : "notify_user";
+  invoke(cmd, { title, body: text }).catch(() => {
+    $("#error-title").textContent = title;
+    $("#error-text").textContent = text;
+    $("#error").hidden = false;
+  });
 }
 
 async function call(cmd, args) {

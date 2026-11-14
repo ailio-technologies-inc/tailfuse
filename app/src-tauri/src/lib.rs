@@ -478,6 +478,17 @@ fn notify(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder().title(title).body(body).show();
 }
 
+/// A native alert window for something that went wrong.
+#[tauri::command]
+fn alert_user(app: AppHandle, title: String, body: String) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    app.dialog()
+        .message(body)
+        .title(title)
+        .kind(MessageDialogKind::Warning)
+        .show(|_| {});
+}
+
 /// Shown from the window for a problem the person may not be looking at.
 #[tauri::command]
 fn notify_user(app: AppHandle, title: String, body: String) {
@@ -1041,6 +1052,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -1110,6 +1122,7 @@ pub fn run() {
             connect_browsers,
             disconnect_browsers,
             notify_user,
+            alert_user,
             install_cli,
             set_tailnet,
             remove_profile,

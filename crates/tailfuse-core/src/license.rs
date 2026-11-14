@@ -156,7 +156,18 @@ pub fn verify(key: &str) -> Result<License> {
 }
 
 /// Verify against an explicit public key (tests, tooling).
+/// Key ids that are no longer honoured (published by mistake, or withdrawn).
+const REVOKED: &[&str] = &["tf-change-org"];
+
 pub fn verify_with(key: &str, pubkey: &str) -> Result<License> {
+    let lic = verify_signature(key, pubkey)?;
+    if REVOKED.contains(&lic.key_id.as_str()) {
+        bail!("this license key has been withdrawn; get a new one at tailfuse.com");
+    }
+    Ok(lic)
+}
+
+fn verify_signature(key: &str, pubkey: &str) -> Result<License> {
     let body = key
         .trim()
         .strip_prefix("tailfuse_")
