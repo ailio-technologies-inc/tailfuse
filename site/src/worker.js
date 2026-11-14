@@ -343,6 +343,31 @@ async function newestFile(ctx, prefix, suffixes) {
   return found || null;
 }
 
+// The app's update feed (tauri.conf.json, plugins.updater.endpoints): latest.json from the newest release
+// that has one. GitHub's releases/latest/download/latest.json breaks for the half hour a new release is
+// building (GitHub calls it latest before the cluster has written its latest.json), and for good if a
+// release never finishes. The updater follows the redirect to GitHub's file host.
+async function updateFeed(ctx) {
+  const key = 'https://tailfuse.com/__update/latest.json';
+  const cache = caches.default;
+  const hit = await cache.match(key);
+  let found = hit ? await hit.text() : null;
+  if (found === null) {
+    found = '';
+    const tags = await recentTags(ctx);
+    for (const tag of tags) {
+      const url = `https://github.com/${REPO}/releases/download/${tag}/latest.json`;
+      if (await released(url).catch(() => false)) {
+        found = url;
+        break;
+      }
+    }
+    if (tags.length) ctx.waitUntil(cache.put(key, new Response(found, { headers: { 'cache-control': 'public, max-age=120' } })));
+  }
+  if (!found) return new Response('no update feed', { status: 404, headers: { 'cache-control': 'no-store' } });
+  return new Response(null, { status: 302, headers: { location: found, 'cache-control': 'no-store' } });
+}
+
 // Only a platform with no build at all, or no recent release holding its file, lands on the release page.
 async function download(request, url, ctx) {
   const [kind, platform] = url.pathname.replace(/^\/download\/?/, '').split('/');
@@ -457,6 +482,7 @@ async function handle(request, env, ctx) {
       return Response.redirect(url.toString(), 301);
     }
 
+    if (url.pathname === '/update/latest.json') return updateFeed(ctx);
     if (url.pathname === '/download' || url.pathname.startsWith('/download/')) return download(request, url, ctx);
     if (url.pathname === '/data/consent') return consentRoute(request, env);
 
