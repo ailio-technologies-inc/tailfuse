@@ -104,22 +104,46 @@ fn civil_from_days(z: i64) -> (i32, u32, u32) {
     (if m <= 2 { y + 1 } else { y } as i32, m as u32, d as u32)
 }
 
-/// Named codes for groups we share Tailfuse with: typing the code is the same
-/// as pasting its signed key, which is checked like any other.
-const CODES: &[(&str, &str)] = &[(
-    "CHANGE_ORG",
-    "tailfuse_eyJlbWFpbCI6IkNoYW5nZS5vcmciLCJtYXhfcHJvZmlsZXMiOjAsInVwZGF0ZXNfdW50aWwiOiIyMDI3LTExLTEzIiwiaXNzdWVkX2F0IjoiMjAyNi0xMS0xNFQwMDowMDowMFoiLCJrZXlfaWQiOiJ0Zi1jaGFuZ2Utb3JnIn0__MYPXX30OzeDNt0U3i8Szq20ZVP5P0pHPhuOcI51osry8DYy6dpGlEypPs4QcEv_cjCQzjTb0lj02HnyGOHLABA",
-)];
+/// Where license codes are redeemed for signed keys.
+pub const REDEEM_URL: &str = "https://tailfuse.com/api/redeem";
 
-/// A named code's signed key, or the input unchanged.
-fn expand(key: &str) -> String {
-    let k = key.trim();
-    let norm = k.to_ascii_uppercase().replace(['-', '.', ' '], "_");
-    CODES
-        .iter()
-        .find(|(code, _)| *code == norm)
-        .map(|(_, signed)| signed.to_string())
-        .unwrap_or_else(|| k.to_string())
+/// True for a short license code (e.g. a group code) rather than a signed key.
+pub fn is_code(input: &str) -> bool {
+    let t = input.trim();
+    !t.is_empty() && !t.starts_with("tailfuse_") && t.len() <= 64
+}
+
+/// Exchange a license code for a signed key at tailfuse.com. The codes are
+/// kept on the server, never in this source; the key that comes back is
+/// verified offline like any other before it is used.
+pub fn redeem(code: &str) -> Result<String> {
+    let body = serde_json::json!({ "code": code.trim() });
+    let resp = ureq::post(REDEEM_URL)
+        .timeout(std::time::Duration::from_secs(20))
+        .set(
+            "user-agent",
+            concat!("tailfuse/", env!("CARGO_PKG_VERSION")),
+        )
+        .send_json(body);
+    let value: serde_json::Value = match resp {
+        Ok(r) => r
+            .into_json()
+            .context("reading the license server's reply")?,
+        Err(ureq::Error::Status(_, r)) => {
+            let v: serde_json::Value = r.into_json().unwrap_or_default();
+            bail!(
+                "{}",
+                v["error"].as_str().unwrap_or("that code was not accepted")
+            );
+        }
+        Err(e) => bail!("could not reach tailfuse.com to check the code: {e}"),
+    };
+    let key = value["key"]
+        .as_str()
+        .context("the license server sent no key")?
+        .to_string();
+    verify(&key).context("the license server's key did not verify")?;
+    Ok(key)
 }
 
 /// Parse and verify a key of the form `tailfuse_<payload_b64>__<sig_b64>`
@@ -133,7 +157,6 @@ pub fn verify(key: &str) -> Result<License> {
 
 /// Verify against an explicit public key (tests, tooling).
 pub fn verify_with(key: &str, pubkey: &str) -> Result<License> {
-    let key = expand(key);
     let body = key
         .trim()
         .strip_prefix("tailfuse_")
@@ -212,15 +235,21 @@ pub fn status(n_profiles: usize, key: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Talks to tailfuse.com: run with `cargo test -- --ignored redeem_live`.
     #[test]
-    fn change_org_code_unlocks() {
-        for code in ["CHANGE_ORG", "change_org", "change.org", " Change-Org "] {
-            let lic = verify(code).expect("code verifies");
-            assert_eq!(lic.email, "Change.org");
-            assert_eq!(lic.max_profiles, 0);
-            check(10, code).expect("unlimited profiles");
-        }
-        assert!(verify("CHANGE").is_err());
+    #[ignore]
+    fn redeem_live() {
+        let key = redeem("CHANGE_ORG").expect("the server redeems the code");
+        assert_eq!(verify(&key).unwrap().email, "Change.org");
+        assert!(redeem("NOT_A_REAL_CODE").is_err());
+    }
+
+    #[test]
+    fn codes_and_keys_told_apart() {
+        assert!(is_code("CHANGE_ORG"));
+        assert!(is_code(" some-code "));
+        assert!(!is_code("tailfuse_abc__def"));
+        assert!(!is_code(""));
     }
 
     fn make_key(max_profiles: usize, email: &str) -> (String, String, String) {

@@ -69,6 +69,7 @@ tunnels:
 - More profiles need a license key. The key is by optional donation: the form at https://tailfuse.com/#pricing takes any amount from $0 up, and a $0 key is the same key as a paid one.
 - A key covers updates for a year, and the version you have keeps working after that.
 - Keys are signed and verified offline: no phone-home, no account, no telemetry.
+- A shared license code (for a group) is exchanged once for a signed key at tailfuse.com/api/redeem; the key is then verified offline like any other.
 
 ## Links
 

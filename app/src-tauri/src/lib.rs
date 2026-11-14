@@ -820,6 +820,15 @@ async fn remove_tunnel(state: State<'_, SharedState>, name: String) -> Result<()
 
 #[tauri::command]
 async fn activate_license(state: State<'_, SharedState>, key: String) -> Result<String, String> {
+    // A short code is exchanged for a signed key at tailfuse.com first.
+    let key = if license::is_code(&key) {
+        tauri::async_runtime::spawn_blocking(move || license::redeem(&key))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("{e:#}"))?
+    } else {
+        key
+    };
     let mut cfg = state.cfg.lock().await;
     let lic = license::verify(&key).map_err(|e| format!("activation failed: {e:#}"))?;
     license::check(cfg.profiles.len(), &key).map_err(|e| e.to_string())?;

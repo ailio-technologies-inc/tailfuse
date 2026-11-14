@@ -633,6 +633,12 @@ fn cmd_license(action: LicenseAction) -> Result<()> {
     let (mut cfg, path) = load()?;
     match action {
         LicenseAction::Activate { key } => {
+            // A short code is exchanged for a signed key at tailfuse.com first.
+            let key = if license::is_code(&key) {
+                license::redeem(&key)?
+            } else {
+                key
+            };
             let lic = license::verify(&key).context("activation failed")?;
             license::check(cfg.profiles.len(), &key)?;
             cfg.license = key;

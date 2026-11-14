@@ -11,6 +11,8 @@
 //   STRIPE_SECRET_KEY  Stripe secret or restricted key (Checkout Sessions: write).
 // Local runs only (.dev.vars): SITE_ORIGIN, the dev server's own address.
 //   STRIPE_WEBHOOK_SECRET  signing secret of the Stripe webhook that posts to /api/stripe-webhook.
+//   LICENSE_CODES      JSON of shared license codes: {"CODE": "Name on the key", ...}. Kept as a
+//                      secret so the codes never sit in the public source.
 // Binding: EMAIL (send_email), used to email a donor their key from license@tailfuse.com.
 
 const MAX_DONATION_USD = 1000;
@@ -221,6 +223,27 @@ async function stripeWebhook(request, env) {
   return sent ? json({ received: true, emailed: true }) : json({ error: 'Email not sent.' }, 500);
 }
 
+// POST /api/redeem {code}: a shared license code becomes a signed key the app verifies offline.
+// Unknown codes all get the same answer, and failed tries are slowed down per address.
+async function redeemCode(request, env) {
+  if (!env.LICENSE_PRIVKEY) return json({ error: 'License keys are not being issued yet.' }, 503);
+  let codes = {};
+  try {
+    codes = JSON.parse(env.LICENSE_CODES || '{}');
+  } catch {
+    codes = {};
+  }
+  const input = await request.json().catch(() => null);
+  const code = String(input?.code ?? '').trim().toUpperCase().replace(/[-. ]/g, '_');
+  const name = code && Object.prototype.hasOwnProperty.call(codes, code) ? String(codes[code]) : '';
+  if (!name) {
+    await new Promise((r) => setTimeout(r, 750));
+    return json({ error: 'That code was not accepted.' }, 404);
+  }
+  const key = await signLicense(env.LICENSE_PRIVKEY, name, new Date());
+  return json({ key, name });
+}
+
 // GET /api/license?session_id=cs_...: the key for a paid Checkout session.
 async function claimLicense(url, env) {
   if (!env.LICENSE_PRIVKEY || !env.STRIPE_SECRET_KEY) return json({ error: 'License keys are not being issued yet.' }, 503);
@@ -365,6 +388,7 @@ async function handle(request, env, ctx) {
           return json({ licenses: Boolean(env.LICENSE_PRIVKEY), donations: Boolean(env.LICENSE_PRIVKEY && env.STRIPE_SECRET_KEY) });
         }
         if (url.pathname === '/api/stripe-webhook' && request.method === 'POST') return await stripeWebhook(request, env);
+        if (url.pathname === '/api/redeem' && request.method === 'POST') return await redeemCode(request, env);
         if (url.pathname === '/api/license' && request.method === 'POST') return await requestLicense(request, env, siteOrigin(env, url));
         if (url.pathname === '/api/license' && request.method === 'GET') return await claimLicense(url, env);
         return json({ error: 'Not found.' }, 404);

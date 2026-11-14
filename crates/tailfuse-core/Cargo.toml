@@ -9,6 +9,7 @@ license.workspace = true
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "2"
+ureq = { version = "2", features = ["json"] }
 serde_json = "1"
 anyhow = "1"
 ed25519-dalek = "2"
