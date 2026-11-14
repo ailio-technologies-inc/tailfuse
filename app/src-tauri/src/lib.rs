@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tailfuse_core::config::{self, Config, Profile, Tunnel};
 use tailfuse_core::{daemon, license, router, sysproxy};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_notification::NotificationExt;
@@ -918,16 +918,31 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-/// Toggle the custom menu-bar panel: position it under the tray icon, show
-/// and focus it — or hide it when it is open.
-// The custom popover panel; the menu-bar icon opens the native menu instead.
-#[allow(dead_code)]
+/// Toggle the menu-bar panel (panel.html): position it under the tray icon,
+/// show and focus it, or hide it when it is open. A left click opens it; a
+/// right click opens the native menu (build_tray).
+/// When the panel last hid because it lost focus (ms since the epoch). Clicking
+/// the tray icon while the panel is open blurs it first, so without this the
+/// same click would hide it and then open it again.
+static PANEL_BLURRED_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 fn toggle_panel(app: &AppHandle) {
     let Some(panel) = app.get_webview_window("panel") else {
         return;
     };
     if panel.is_visible().unwrap_or(false) {
         let _ = panel.hide();
+        return;
+    }
+    let blurred = PANEL_BLURRED_AT.load(std::sync::atomic::Ordering::Relaxed);
+    if now_ms().saturating_sub(blurred) < 300 {
         return;
     }
     // Anchor the panel's top center under the tray icon (macOS; elsewhere the
@@ -973,9 +988,21 @@ fn build_tray(app: &AppHandle) -> Result<()> {
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-36.png"))?;
     let builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        // Left click: the panel. Right click: the native menu, which keeps
+        // Quit and a checkmark per tailnet within reach.
+        .show_menu_on_left_click(false)
         .tooltip("Tailfuse")
         .icon(icon)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                toggle_panel(tray.app_handle());
+            }
+        })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
                 if let Some(state) = app.try_state::<SharedState>() {
@@ -1129,6 +1156,7 @@ pub fn run() {
                 let handle = app.handle().clone();
                 w.on_window_event(move |event| {
                     if matches!(event, WindowEvent::Focused(false)) {
+                        PANEL_BLURRED_AT.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
                         if let Some(panel) = handle.get_webview_window("panel") {
                             let _ = panel.hide();
                         }
