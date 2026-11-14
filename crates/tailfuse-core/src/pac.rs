@@ -21,7 +21,12 @@ pub fn generate(cfg: &Config, proxy_addr: &str) -> String {
 /// hosts and these Tailscale addresses (matched only when the URL uses the
 /// address itself). Every check is a string comparison: the PAC never makes the
 /// browser look a name up, so ordinary browsing pays nothing for it.
-pub fn generate_from(suffixes: &[String], hosts: &[String], ips: &[String], proxy_addr: &str) -> String {
+pub fn generate_from(
+    suffixes: &[String],
+    hosts: &[String],
+    ips: &[String],
+    proxy_addr: &str,
+) -> String {
     let mut domains: Vec<String> = suffixes
         .iter()
         .map(|s| s.trim().trim_start_matches('.').to_lowercase())
@@ -35,7 +40,11 @@ pub fn generate_from(suffixes: &[String], hosts: &[String], ips: &[String], prox
         // "notailio.dev" never counts as under "ailio.dev", plus the domain itself.
         .map(|h| format!("dnsDomainIs(host, \".{h}\") || host == {h:?}"))
         .collect();
-    let mut exact: Vec<String> = hosts.iter().chain(ips.iter()).map(|h| h.to_lowercase()).collect();
+    let mut exact: Vec<String> = hosts
+        .iter()
+        .chain(ips.iter())
+        .map(|h| h.to_lowercase())
+        .collect();
     exact.sort();
     exact.dedup();
     conds.extend(exact.iter().map(|h| format!("host == {h:?}")));

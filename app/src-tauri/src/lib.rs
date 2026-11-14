@@ -160,6 +160,94 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
 
 /// Start profiles + router + PAC. Shared by the Start command and tray toggle.
 async fn start_inner(state: &AppState) -> Result<(), String> {
+    // The menu-bar icon animates while Tailfuse starts (spawn_tray_animation).
+    STARTING.store(true, std::sync::atomic::Ordering::Relaxed);
+    let res = start_inner_locked(state).await;
+    STARTING.store(false, std::sync::atomic::Ordering::Relaxed);
+    res
+}
+
+/// True while Tailfuse is starting its tailnets.
+static STARTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Animate the menu-bar icon while tailnets connect: a spark runs round the
+/// dots (icons/tray-connecting, drawn by scripts/gen-icons.sh). It plays while
+/// Tailfuse starts or any tailnet is on its way up (not one waiting for a
+/// sign-in), for at most 90 s at a stretch, then the icon goes back to rest.
+fn spawn_tray_animation(app: AppHandle) {
+    const FRAMES: [&[u8]; 10] = [
+        include_bytes!("../icons/tray-connecting/0.png"),
+        include_bytes!("../icons/tray-connecting/1.png"),
+        include_bytes!("../icons/tray-connecting/2.png"),
+        include_bytes!("../icons/tray-connecting/3.png"),
+        include_bytes!("../icons/tray-connecting/4.png"),
+        include_bytes!("../icons/tray-connecting/5.png"),
+        include_bytes!("../icons/tray-connecting/6.png"),
+        include_bytes!("../icons/tray-connecting/7.png"),
+        include_bytes!("../icons/tray-connecting/8.png"),
+        include_bytes!("../icons/tray-connecting/9.png"),
+    ];
+    let frames: Vec<tauri::image::Image<'static>> = FRAMES
+        .iter()
+        .filter_map(|b| tauri::image::Image::from_bytes(b).ok())
+        .collect();
+    let Ok(rest) = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-36.png")) else {
+        return;
+    };
+    if frames.is_empty() {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        use std::time::{Duration, Instant};
+        let mut connecting = false;
+        let mut polled = Instant::now() - Duration::from_secs(10);
+        let mut since: Option<Instant> = None;
+        let mut animating = false;
+        let mut frame = 0usize;
+        loop {
+            if polled.elapsed() >= Duration::from_secs(1) {
+                polled = Instant::now();
+                let starting = STARTING.load(std::sync::atomic::Ordering::Relaxed);
+                connecting = starting
+                    || match app.try_state::<SharedState>() {
+                        Some(state) => {
+                            let daemons = match state.running.try_lock() {
+                                Ok(g) => Ok(g.as_ref().map(|r| r.daemons.clone())),
+                                Err(_) => Err(()),
+                            };
+                            match daemons {
+                                Ok(Some(d)) => d.status().await.iter().any(|s| s.connecting),
+                                Ok(None) => false,
+                                // Busy (a start or stop holds it): keep the last answer.
+                                Err(()) => connecting,
+                            }
+                        }
+                        None => false,
+                    };
+                since = match (connecting, since) {
+                    (true, None) => Some(Instant::now()),
+                    (true, s) => s,
+                    (false, _) => None,
+                };
+            }
+            let play = since.is_some_and(|t| t.elapsed() < Duration::from_secs(90));
+            if let Some(tray) = app.tray_by_id(TRAY_ID) {
+                if play {
+                    let _ = tray.set_icon(Some(frames[frame % frames.len()].clone()));
+                    frame += 1;
+                    animating = true;
+                } else if animating {
+                    let _ = tray.set_icon(Some(rest.clone()));
+                    animating = false;
+                    frame = 0;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(if play { 110 } else { 500 })).await;
+        }
+    });
+}
+
+async fn start_inner_locked(state: &AppState) -> Result<(), String> {
     let mut running = state.running.lock().await;
     if running.is_some() {
         return Ok(());
@@ -1262,6 +1350,7 @@ pub fn run() {
                 });
             }
             build_tray(app.handle())?;
+            spawn_tray_animation(app.handle().clone());
             // Updates from GitHub Releases; relaunches only while Tailfuse is off.
             if let Some(state) = app.try_state::<SharedState>() {
                 let state = Arc::clone(&state);

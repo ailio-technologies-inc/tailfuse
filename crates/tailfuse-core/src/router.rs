@@ -94,7 +94,10 @@ impl RouteTable {
     /// The tailnet a hostname (or IP literal) goes to, without a DNS lookup:
     /// configured suffix, then learned domain, then a known Tailscale address.
     pub fn owner(&self, host: &str) -> Option<(String, u16)> {
-        let host = host.trim_end_matches('.').trim_matches(['[', ']']).to_lowercase();
+        let host = host
+            .trim_end_matches('.')
+            .trim_matches(['[', ']'])
+            .to_lowercase();
         let mut best: Option<(&str, u16, usize)> = None;
         for (suffix, (profile, port)) in &self.by_suffix {
             if host.ends_with(suffix.as_str())
@@ -190,7 +193,11 @@ impl RouteTable {
     /// to a device on the same tailnet. Called after every learning round.
     pub async fn recheck_hosts(&self) {
         let hosts: Vec<(String, String)> = match self.learned.read() {
-            Ok(l) => l.hosts.iter().map(|(h, p)| (h.clone(), p.clone())).collect(),
+            Ok(l) => l
+                .hosts
+                .iter()
+                .map(|(h, p)| (h.clone(), p.clone()))
+                .collect(),
             Err(_) => return,
         };
         let mut gone = Vec::new();
@@ -212,7 +219,10 @@ impl RouteTable {
     }
 
     fn has_learned_ips(&self) -> bool {
-        self.learned.read().map(|l| !l.ips.is_empty()).unwrap_or(false)
+        self.learned
+            .read()
+            .map(|l| !l.ips.is_empty())
+            .unwrap_or(false)
     }
 
     /// The single profile in `owners` and its port, or None when it is empty
@@ -242,7 +252,10 @@ impl RouteTable {
             l.ips.entry(*ip).or_default().insert(profile.to_string());
         }
         for d in domains {
-            l.domains.entry(d.clone()).or_default().insert(profile.to_string());
+            l.domains
+                .entry(d.clone())
+                .or_default()
+                .insert(profile.to_string());
         }
     }
 
@@ -695,7 +708,11 @@ mod tests {
     fn learned_domains_and_addresses_route_only_when_unambiguous() {
         let rt = RouteTable {
             by_suffix: BTreeMap::from([(".work.ts.net".into(), ("work".into(), 1))]),
-            ports: BTreeMap::from([("work".into(), 1), ("ailio".into(), 2), ("change".into(), 3)]),
+            ports: BTreeMap::from([
+                ("work".into(), 1),
+                ("ailio".into(), 2),
+                ("change".into(), 3),
+            ]),
             ..Default::default()
         };
         let ip: IpAddr = "100.74.194.18".parse().unwrap();
@@ -704,7 +721,10 @@ mod tests {
         rt.set_learned("change", &[shared], &[]);
         // Learned domain, and its subdomains.
         assert_eq!(rt.owner("ailio.dev").map(|o| o.0), Some("ailio".into()));
-        assert_eq!(rt.owner("litellm.ailio.dev").map(|o| o.0), Some("ailio".into()));
+        assert_eq!(
+            rt.owner("litellm.ailio.dev").map(|o| o.0),
+            Some("ailio".into())
+        );
         assert!(rt.owner("notailio.dev").is_none());
         // Configured suffixes still win.
         assert_eq!(rt.owner("db.work.ts.net").map(|o| o.0), Some("work".into()));

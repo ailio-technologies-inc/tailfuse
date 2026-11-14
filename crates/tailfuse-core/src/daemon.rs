@@ -36,6 +36,9 @@ pub struct ProfileStatus {
     pub account: String,
     /// Signed in but switched off (`tailscale down`): a deliberate disconnect.
     pub paused: bool,
+    /// On its way up: the daemon is starting or reaching its tailnet (not yet
+    /// answering, or `Starting`/`NoState`). A node waiting for a sign-in is not.
+    pub connecting: bool,
 }
 
 /// What Tailscale reports when a tailnet's policy needs its logging left on.
@@ -288,6 +291,8 @@ impl DaemonSet {
                         }
                         ps.paused = st.backend_state.as_deref() == Some("Stopped");
                         ps.online = st.backend_state.as_deref() == Some("Running");
+                        ps.connecting =
+                            matches!(st.backend_state.as_deref(), Some("Starting" | "NoState"));
                         if let Some(s) = st.self_ {
                             ps.hostname = s.hostname.unwrap_or_default();
                         }
@@ -295,7 +300,11 @@ impl DaemonSet {
                     }
                     Err(e) => ps.error = format!("parsing status: {e}"),
                 },
-                Err(e) => ps.error = e.to_string(),
+                Err(e) => {
+                    // A daemon that does not answer yet is still starting.
+                    ps.connecting = true;
+                    ps.error = e.to_string();
+                }
             }
             out.push(ps);
         }
@@ -484,7 +493,11 @@ fn served_domains(text: &str) -> Vec<String> {
 async fn stop_orphans(socket: &Path) {
     #[cfg(unix)]
     {
-        let Ok(out) = Command::new("ps").args(["-axo", "pid=,ppid=,command="]).output().await else {
+        let Ok(out) = Command::new("ps")
+            .args(["-axo", "pid=,ppid=,command="])
+            .output()
+            .await
+        else {
             return;
         };
         let needle = format!("--socket {}", socket.display());
@@ -501,7 +514,10 @@ async fn stop_orphans(socket: &Path) {
         if pids.is_empty() {
             return;
         }
-        tracing::warn!("stopping leftover tailscaled for {}: {pids:?}", socket.display());
+        tracing::warn!(
+            "stopping leftover tailscaled for {}: {pids:?}",
+            socket.display()
+        );
         for pid in &pids {
             let _ = Command::new("kill").arg(pid.to_string()).status().await;
         }
@@ -527,9 +543,8 @@ async fn stop_orphans(socket: &Path) {
 /// path is followed by a space or ends the line, so `a.sock` never matches
 /// `a.sock2`).
 fn orphan_matches(line: &str, needle: &str) -> bool {
-    line.match_indices(needle).any(|(i, _)| {
-        matches!(line[i + needle.len()..].chars().next(), None | Some(' '))
-    })
+    line.match_indices(needle)
+        .any(|(i, _)| matches!(line[i + needle.len()..].chars().next(), None | Some(' ')))
 }
 
 /// Run `tailscale --socket <sock> <args>`, returning stdout on success.
@@ -981,7 +996,10 @@ mod orphan_tests {
         assert!(orphan_matches(line, "--socket /x/ailio.sock"));
         assert!(!orphan_matches(line, "--socket /x/ail"));
         assert!(!orphan_matches(line, "--socket /x/change.sock"));
-        assert!(orphan_matches("1 tailscaled --socket /x/a.sock", "--socket /x/a.sock"));
+        assert!(orphan_matches(
+            "1 tailscaled --socket /x/a.sock",
+            "--socket /x/a.sock"
+        ));
     }
 }
 
@@ -992,13 +1010,19 @@ mod learn_tests {
     #[test]
     fn domains_skip_ts_net_and_keep_split_and_search() {
         let text = "=== MagicDNS configuration ===\n\nSplit DNS Routes:\n  - ts.net.                        -> 199.247.155.53\n  - ailio.dev.                     -> 100.100.100.100\n\nSearch Domains:\n  - tail8e2dc7.ts.net\n  - corp.example\n\n=== System DNS configuration ===\n\nSearch domains:\n  - localdomain\n";
-        assert_eq!(served_domains(text), vec!["ailio.dev", "tail8e2dc7.ts.net", "corp.example"]);
+        assert_eq!(
+            served_domains(text),
+            vec!["ailio.dev", "tail8e2dc7.ts.net", "corp.example"]
+        );
     }
 
     #[test]
     fn only_online_peers_count() {
         let text = r#"{"Peer":{"a":{"Online":true,"TailscaleIPs":["100.74.194.18","fd7a:115c:a1e0::1"]},"b":{"Online":false,"TailscaleIPs":["100.70.0.9"]}}}"#;
-        let ips: Vec<String> = online_peer_ips(text).iter().map(|i| i.to_string()).collect();
+        let ips: Vec<String> = online_peer_ips(text)
+            .iter()
+            .map(|i| i.to_string())
+            .collect();
         assert_eq!(ips, vec!["100.74.194.18", "fd7a:115c:a1e0::1"]);
     }
 }
