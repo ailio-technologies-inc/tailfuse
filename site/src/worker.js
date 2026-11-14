@@ -11,12 +11,11 @@
 //   STRIPE_SECRET_KEY  Stripe secret or restricted key (Checkout Sessions: write).
 // Local runs only (.dev.vars): SITE_ORIGIN, the dev server's own address.
 //   STRIPE_WEBHOOK_SECRET  signing secret of the Stripe webhook that posts to /api/stripe-webhook.
-//   LICENSE_CODES      JSON of shared license codes: {"CODE": "Name on the key" | {"name", "updateYears"}}. Kept as a
+//   LICENSE_CODES      JSON of shared license codes: {"CODE": "Name on the key" | {"name"}}. Kept as a
 //                      secret so the codes never sit in the public source.
 // Binding: EMAIL (send_email), used to email a donor their key from license@tailfuse.com.
 
 const MAX_DONATION_USD = 1000;
-const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 // DER header of a PKCS#8 Ed25519 private key; the 32-byte seed follows it.
 const PKCS8_ED25519 = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
 
@@ -44,7 +43,7 @@ function cleanEmail(value) {
 }
 
 // Same shape and wire format as crates/licgen: tailfuse_<payload>__<signature>, both base64url.
-export async function signLicense(privkey, email, issuedAt, updateYears = 1) {
+export async function signLicense(privkey, email, issuedAt) {
   const seed = b64urlDecode(String(privkey).trim());
   if (seed.length !== 32) throw new Error('LICENSE_PRIVKEY must be a 32-byte base64url key');
   const pkcs8 = new Uint8Array(PKCS8_ED25519.length + seed.length);
@@ -55,7 +54,8 @@ export async function signLicense(privkey, email, issuedAt, updateYears = 1) {
     JSON.stringify({
       email,
       max_profiles: 0,
-      updates_until: new Date(issuedAt.getTime() + YEAR_MS * updateYears).toISOString().slice(0, 10),
+      // Every key gets updates forever.
+      updates_until: 'forever',
       issued_at: issuedAt.toISOString(),
       key_id: `tf-${Math.floor(issuedAt.getTime() / 1000)}`,
     }),
@@ -67,7 +67,7 @@ export async function signLicense(privkey, email, issuedAt, updateYears = 1) {
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 // Emails a donor their key. A failed send never blocks the key itself: the page still shows it.
-async function emailKey(env, email, key, updatesUntil) {
+async function emailKey(env, email, key) {
   if (!env.EMAIL) return false;
   const text = [
     'Thank you for donating to Tailfuse.',
@@ -80,7 +80,7 @@ async function emailKey(env, email, key, updatesUntil) {
     '',
     '  tailfuse license activate <key>',
     '',
-    `The key is issued to ${email} and covers updates until ${updatesUntil}. The version you have keeps working after that.`,
+    `The key is issued to ${email} and includes every future update.`,
     'It is verified on your machine: no account and no phone-home.',
     '',
     'Questions? Reply to this email.',
@@ -93,7 +93,7 @@ async function emailKey(env, email, key, updatesUntil) {
 <pre style="white-space: pre-wrap; word-break: break-all; background: #f1f1f2; border-radius: 6px; padding: 14px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;">${escapeHtml(key)}</pre>
 <p>To use it, open Tailfuse and paste the key into the License field, or run:</p>
 <pre style="background: #f1f1f2; border-radius: 6px; padding: 14px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;">tailfuse license activate &lt;key&gt;</pre>
-<p>The key is issued to ${escapeHtml(email)} and covers updates until ${escapeHtml(updatesUntil)}. The version you have keeps working after that. It is verified on your machine: no account and no phone-home.</p>
+<p>The key is issued to ${escapeHtml(email)} and includes every future update.</p>
 <p>Questions? Reply to this email.</p>
 <p><a href="https://tailfuse.com" style="color: #c8340c;">tailfuse.com</a></p>
 </div>`;
@@ -170,7 +170,7 @@ async function requestLicense(request, env, origin) {
 // Emails the key for a paid session unless it already went out; the session's metadata remembers.
 async function emailKeyOnce(env, session, email, key, issuedAt) {
   if (session.metadata?.key_emailed === '1') return true;
-  const sent = await emailKey(env, email, key, new Date(issuedAt.getTime() + YEAR_MS).toISOString().slice(0, 10));
+  const sent = await emailKey(env, email, key);
   if (sent) await stripe(env, `checkout/sessions/${session.id}`, { 'metadata[key_emailed]': '1' }).catch(() => {});
   return sent;
 }
@@ -235,15 +235,14 @@ async function redeemCode(request, env) {
   }
   const input = await request.json().catch(() => null);
   const code = String(input?.code ?? '').trim().toUpperCase().replace(/[-. ]/g, '_');
-  // Each code is "Name on the key", or {"name": ..., "updateYears": n} for a longer update period.
+  // Each code is "Name on the key", or {"name": ...}.
   const entry = code && Object.prototype.hasOwnProperty.call(codes, code) ? codes[code] : null;
   const name = entry == null ? '' : String(typeof entry === 'object' ? entry.name ?? '' : entry);
-  const years = typeof entry === 'object' && entry ? Math.min(10, Math.max(1, Number(entry.updateYears) || 1)) : 1;
   if (!name) {
     await new Promise((r) => setTimeout(r, 750));
     return json({ error: 'That code was not accepted.' }, 404);
   }
-  const key = await signLicense(env.LICENSE_PRIVKEY, name, new Date(), years);
+  const key = await signLicense(env.LICENSE_PRIVKEY, name, new Date());
   return json({ key, name });
 }
 

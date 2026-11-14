@@ -651,10 +651,7 @@ fn cmd_license(action: LicenseAction) -> Result<()> {
             license::check(cfg.profiles.len(), &key)?;
             cfg.license = key;
             cfg.save(&path)?;
-            println!(
-                "activated for {} (updates until {})",
-                lic.email, lic.updates_until
-            );
+            println!("activated for {} (updates included forever)", lic.email);
         }
         LicenseAction::Status => println!("{}", license::status(cfg.profiles.len(), &cfg.license)),
     }

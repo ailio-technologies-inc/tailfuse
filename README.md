@@ -147,7 +147,7 @@ It works against the running Tailfuse (the app, or `tailfuse up`).
 
 ## Pricing
 
-**Free for up to 2 tailnet profiles — forever.** More profiles need a license key, which is by optional donation: get one at [tailfuse.com](https://tailfuse.com/#pricing) for any amount from $0 up (updates included for a year, your version keeps working after that). Keys are signed and verified offline — no phone-home, no account, no telemetry.
+**Free for up to 2 tailnet profiles — forever.** More profiles need a license key, which is by optional donation: get one at [tailfuse.com](https://tailfuse.com/#pricing) for any amount from $0 up (every future update included). Keys are signed and verified offline — no phone-home, no account, no telemetry.
 
 ```sh
 tailfuse license activate tailfuse_eyJ...__...

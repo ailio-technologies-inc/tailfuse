@@ -32,27 +32,11 @@ pub struct License {
 }
 
 impl License {
+    /// Every license key gets updates forever; `updates_until` is kept only so
+    /// keys issued before that policy still parse.
     pub fn updates_expired(&self) -> bool {
-        chrono_date(&self.updates_until)
-            .map(|d| d < today())
-            .unwrap_or(false)
+        false
     }
-}
-
-fn chrono_date(s: &str) -> Option<(i32, u32, u32)> {
-    let mut it = s.split('-');
-    let y = it.next()?.parse().ok()?;
-    let m = it.next()?.parse().ok()?;
-    let d = it.next()?.parse().ok()?;
-    Some((y, m, d))
-}
-
-fn today() -> (i32, u32, u32) {
-    let days = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() / 86400)
-        .unwrap_or(0) as i64;
-    civil_from_days(days)
 }
 
 /// Sign a license payload, returning a key string (tests; licgen has its own
@@ -88,20 +72,6 @@ pub fn generate_keypair() -> (String, String) {
         URL_SAFE_NO_PAD.encode(sk.to_bytes()),
         URL_SAFE_NO_PAD.encode(sk.verifying_key().to_bytes()),
     )
-}
-
-// Howard Hinnant's civil_from_days, no chrono dependency in the core crate.
-fn civil_from_days(z: i64) -> (i32, u32, u32) {
-    let z = z + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = (z - era * 146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (if m <= 2 { y + 1 } else { y } as i32, m as u32, d as u32)
 }
 
 /// Where license codes are redeemed for signed keys.
@@ -220,13 +190,7 @@ pub fn status(n_profiles: usize, key: &str) -> String {
         if !key.trim().is_empty() {
             match verify(key) {
                 Ok(lic) => {
-                    let mut s = format!("licensed to {}", lic.email);
-                    if lic.updates_expired() {
-                        s.push_str(&format!(
-                            " (updates expired {} — upgrade to keep receiving updates)",
-                            lic.updates_until
-                        ));
-                    }
+                    let s = format!("licensed to {}", lic.email);
                     return s;
                 }
                 Err(_) => return "license present but invalid".into(),
@@ -314,15 +278,14 @@ mod tests {
 
     #[test]
     fn updates_expiry_is_warning_only() {
-        let mut lic = License {
+        let lic = License {
             email: "a@b.c".into(),
             max_profiles: 0,
             updates_until: "2020-01-01".into(),
             issued_at: String::new(),
             key_id: String::new(),
         };
-        assert!(lic.updates_expired());
-        lic.updates_until = "2099-01-01".into();
+        // Updates never expire, whatever date an older key carries.
         assert!(!lic.updates_expired());
     }
 }

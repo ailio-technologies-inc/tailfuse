@@ -8,3 +8,7 @@ node_modules/
 app/.taste-skill/
 app/src/preview.html
 app/src/preview-stub.js
+
+# editor and agent tool state
+.serena/
+.vscode/

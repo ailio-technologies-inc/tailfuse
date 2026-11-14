@@ -846,8 +846,8 @@ async fn activate_license(state: State<'_, SharedState>, key: String) -> Result<
     cfg.license = key;
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
     Ok(format!(
-        "activated for {} (updates until {})",
-        lic.email, lic.updates_until
+        "activated for {} (updates included forever)",
+        lic.email
     ))
 }
 

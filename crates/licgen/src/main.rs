@@ -58,11 +58,7 @@ fn main() -> Result<()> {
             .map_err(|_| anyhow::anyhow!("bad private key length"))?,
     );
 
-    let updates_until = args.updates_until.unwrap_or_else(|| {
-        (chrono::Utc::now() + chrono::Duration::days(365))
-            .format("%Y-%m-%d")
-            .to_string()
-    });
+    let updates_until = args.updates_until.unwrap_or_else(|| "forever".to_string());
     let payload = serde_json::to_vec(&License {
         email,
         max_profiles: args.max_profiles,
