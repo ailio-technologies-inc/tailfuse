@@ -277,13 +277,18 @@
 </div>
 <div class="tile">
 <h3>Runs as your user</h3>
-<p>Tailfuse installs neither a root helper nor a kernel extension. The one system setting it changes is your browsers’ automatic proxy address, and you can remove it from the app’s settings.</p>
+<p>Tailfuse installs neither a root helper nor a kernel extension. The one system setting it changes is your Mac’s automatic proxy address, set once with your permission and removable from the app’s settings.</p>
 <div class="frag">http://127.0.0.1:43100/tailfuse.pac</div>
 </div>
 <div class="tile tile--wide">
 <h3>Pins a local port to a tailnet service</h3>
 <p>A tunnel maps a port on this machine to one service on one tailnet, so a database client connects with no proxy settings.</p>
 <div class="frag frag--tunnel"><span>127.0.0.1:5432</span><span class="frag__wire"></span><span class="frag__pill">profile work</span><span class="frag__wire"></span><span>db.work.ts.net:5432</span></div>
+</div>
+<div class="tile tile--full">
+<h3>Keys locked to your account</h3>
+<p>Each tailnet keeps its node keys and its control socket in a folder only your account can open, so another user on the same computer can neither read them nor drive the connection. Auth keys and your license key live in the macOS Keychain or Windows Credential Manager, never in a config file, and nothing is sent to us.</p>
+<div class="frag">~/Library/Application Support/tailfuse  <span class="accent">drwx------</span>   license  <span class="accent">Keychain</span></div>
 </div>
 </div>
 </div>
