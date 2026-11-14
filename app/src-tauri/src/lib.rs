@@ -211,15 +211,37 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
         .try_lock()
         .map(|g| g.is_some())
         .unwrap_or(true);
+    let any_online = stats.iter().any(|s| s.online);
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
+
+    // Status line first, the macOS menu-bar convention: what the app is doing
+    // right now, then the things, then the actions.
+    let header = if !is_up {
+        "Tailfuse — Stopped"
+    } else if any_online {
+        "Tailfuse — Connected"
+    } else {
+        "Tailfuse — Waiting for sign-in"
+    };
+    if let Ok(item) = MenuItem::with_id(app, "status", header, false, None::<&str>) {
+        items.push(Box::new(item));
+    }
+
     // One live item per profile: the state is in the label, the click acts —
     // an online profile opens the window, a logged-out one starts its login.
+    if cfg.profiles.is_empty() {
+        if let Ok(item) =
+            MenuItem::with_id(app, "no-profiles", "No tailnets yet", false, None::<&str>)
+        {
+            items.push(Box::new(item));
+        }
+    }
     for name in cfg.profiles.keys() {
         let online = stats.iter().any(|s| s.name == *name && s.online);
         let label = if online {
             format!("● {name}")
         } else if is_up {
-            format!("○ {name} — log in…")
+            format!("○ {name} — Sign in…")
         } else {
             format!("○ {name}")
         };
@@ -229,17 +251,22 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
             items.push(Box::new(item));
         }
     }
-    if !cfg.profiles.is_empty() {
-        if let Ok(sep) = PredefinedMenuItem::separator(app) {
-            items.push(Box::new(sep));
-        }
+    if let Ok(sep) = PredefinedMenuItem::separator(app) {
+        items.push(Box::new(sep));
     }
-    if let Ok(show) = MenuItem::with_id(app, "show", "Show Tailfuse", true, None::<&str>) {
+    if let Ok(show) = MenuItem::with_id(app, "show", "Open Tailfuse", true, None::<&str>) {
         items.push(Box::new(show));
     }
-    let toggle_label = if is_up { "Stop" } else { "Start" };
+    let toggle_label = if is_up {
+        "Stop Tailfuse"
+    } else {
+        "Start Tailfuse"
+    };
     if let Ok(toggle) = MenuItem::with_id(app, "toggle", toggle_label, true, None::<&str>) {
         items.push(Box::new(toggle));
+    }
+    if let Ok(sep) = PredefinedMenuItem::separator(app) {
+        items.push(Box::new(sep));
     }
     if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit Tailfuse", true, None::<&str>) {
         items.push(Box::new(quit));
