@@ -2393,7 +2393,7 @@ dependencies = [
 
 [[package]]
 name = "licgen"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4382,7 +4382,7 @@ dependencies = [
 
 [[package]]
 name = "tailfuse-cli"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "anyhow",
  "clap",
@@ -4397,7 +4397,7 @@ dependencies = [
 
 [[package]]
 name = "tailfuse-core"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
