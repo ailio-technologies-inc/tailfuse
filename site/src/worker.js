@@ -326,19 +326,10 @@ async function download(request, url, ctx) {
     .map((sfx) => assets.find((a) => typeof a.name === 'string' && a.name.startsWith(prefix) && a.name.endsWith(sfx)))
     .find(Boolean);
   if (!asset?.browser_download_url) return Response.redirect(RELEASES, 302);
-  // Stream the file from GitHub's CDN through tailfuse.com, so the visitor stays on this site and
-  // the browser saves the file at once. GitHub still serves the bytes; the Worker only relays them.
-  const upstream = await fetch(asset.browser_download_url, { headers: { 'user-agent': 'tailfuse-site' }, redirect: 'follow' });
-  if (!upstream.ok || !upstream.body) return Response.redirect(asset.browser_download_url, 302);
-  const headers = new Headers({
-    'content-type': upstream.headers.get('content-type') || 'application/octet-stream',
-    'content-disposition': `attachment; filename="${asset.name}"`,
-    'cache-control': 'public, max-age=300',
-    'x-content-type-options': 'nosniff',
-  });
-  const length = upstream.headers.get('content-length');
-  if (length) headers.set('content-length', length);
-  return new Response(upstream.body, { status: 200, headers });
+  // Straight to the file on GitHub's download servers: the browser saves it at once, the visitor never sees
+  // the releases page, and Chrome's Safe Browsing trusts GitHub's file host far more than a new domain
+  // relaying the bytes (relayed through tailfuse.com, a brand-new download was blocked as "suspicious").
+  return Response.redirect(asset.browser_download_url, 302);
 }
 
 // Security headers for every response the site sends.
