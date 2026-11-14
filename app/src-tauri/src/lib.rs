@@ -18,6 +18,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{watch, Mutex};
 
@@ -33,6 +34,8 @@ struct AppState {
     cfg_path: PathBuf,
     cfg: Mutex<Config>,
     running: Mutex<Option<Running>>,
+    /// Why the system proxy could not be set at the last start; empty when it was.
+    proxy_problem: Mutex<String>,
 }
 
 type SharedState = Arc<AppState>;
@@ -45,6 +48,8 @@ struct ProfileView {
     hostname: String,
     ips: Vec<String>,
     error: String,
+    /// The login this tailnet is signed in with, when known.
+    account: String,
 }
 
 #[derive(Serialize)]
@@ -54,6 +59,20 @@ struct StateView {
     license: String,
     profiles: Vec<ProfileView>,
     tunnels: Vec<Tunnel>,
+    /// Why browsers are not being pointed at Tailfuse, when they are not.
+    proxy_problem: String,
+    /// The official Tailscale app, while it is connected.
+    tailscale_app: Option<TailscaleAppView>,
+    /// Where the `tailfuse` command is installed; empty when it is not.
+    cli: String,
+}
+
+#[derive(Serialize)]
+struct TailscaleAppView {
+    tailnet: String,
+    account: String,
+    /// The Tailfuse tailnet that is the same network, if there is one.
+    same_as: String,
 }
 
 #[tauri::command]
@@ -73,6 +92,10 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
                     hostname: st.map(|s| s.hostname.clone()).unwrap_or_default(),
                     ips: st.map(|s| s.tailscale_ips.clone()).unwrap_or(vec![]),
                     error: st.map(|s| s.error.clone()).unwrap_or_default(),
+                    account: st
+                        .map(|s| s.account.clone())
+                        .filter(|a| !a.is_empty())
+                        .unwrap_or_else(|| prof.account.clone()),
                 });
             }
             (true, views)
@@ -88,6 +111,7 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
                     hostname: String::new(),
                     ips: vec![],
                     error: String::new(),
+                    account: prof.account.clone(),
                 })
                 .collect(),
         ),
@@ -98,6 +122,24 @@ async fn get_state(state: State<'_, SharedState>) -> Result<StateView, String> {
         license: license::status(cfg.profiles.len(), &cfg.license),
         profiles,
         tunnels: cfg.tunnels.clone(),
+        proxy_problem: if up {
+            state.proxy_problem.lock().await.clone()
+        } else {
+            String::new()
+        },
+        tailscale_app: daemon::official_tailscale()
+            .await
+            .map(|t| TailscaleAppView {
+                same_as: cfg
+                    .owner(&format!("host.{}", t.suffix))
+                    .map(|(name, _)| name.to_string())
+                    .unwrap_or_default(),
+                tailnet: t.tailnet,
+                account: t.account,
+            }),
+        cli: cli_path()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
     })
 }
 
@@ -126,9 +168,14 @@ async fn start_inner(state: &AppState) -> Result<(), String> {
     }
     // Best-effort system PAC; the window shows the manual URL regardless.
     let pac_url = format!("http://{}/tailfuse.pac", cfg.router.listen);
-    if let Err(e) = sysproxy::apply(&pac_url) {
-        tracing::warn!("system PAC: {e:#}");
-    }
+    *state.proxy_problem.lock().await = match sysproxy::apply(&pac_url) {
+        Ok(()) => String::new(),
+        Err(e) if sysproxy::needs_permission(&e) => "permission".into(),
+        Err(e) => {
+            tracing::warn!("system PAC: {e:#}");
+            format!("{e:#}")
+        }
+    };
     *running = Some(Running { daemons, shutdown });
     Ok(())
 }
@@ -187,14 +234,14 @@ fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::Profile
             items.push(Box::new(sep));
         }
     }
-    if let Ok(show) = MenuItem::with_id(app, "show", "Show tailfuse", true, None::<&str>) {
+    if let Ok(show) = MenuItem::with_id(app, "show", "Show Tailfuse", true, None::<&str>) {
         items.push(Box::new(show));
     }
     let toggle_label = if is_up { "Stop" } else { "Start" };
     if let Ok(toggle) = MenuItem::with_id(app, "toggle", toggle_label, true, None::<&str>) {
         items.push(Box::new(toggle));
     }
-    if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit tailfuse", true, None::<&str>) {
+    if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit Tailfuse", true, None::<&str>) {
         items.push(Box::new(quit));
     }
     let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
@@ -251,22 +298,56 @@ async fn login(
     Ok(url)
 }
 
-/// A short profile name for a tailnet: `example.com` gives `example`,
-/// `someone@gmail.com` gives `someone`, else the MagicDNS label; made unique.
+/// Mail domains that say nothing about whose tailnet this is.
+const PERSONAL_MAIL: &[&str] = &[
+    "gmail",
+    "googlemail",
+    "outlook",
+    "hotmail",
+    "live",
+    "msn",
+    "icloud",
+    "me",
+    "mac",
+    "yahoo",
+    "proton",
+    "protonmail",
+    "pm",
+    "fastmail",
+    "hey",
+    "aol",
+    "gmx",
+    "github",
+];
+
+/// A short profile name from the account that signed in: `someone@example.com`
+/// gives `example`, `someone@gmail.com` gives `someone`. Falls back to the
+/// tailnet's own name, then its MagicDNS label. Made unique.
 fn name_for_tailnet(cfg: &Config, found: &daemon::SignedIn) -> String {
     let clean = |text: &str| -> String {
-        text.split(['@', '.'])
-            .next()
-            .unwrap_or("")
-            .to_lowercase()
+        text.to_lowercase()
             .chars()
             .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
             .take(24)
             .collect()
     };
-    let mut base = clean(&found.tailnet);
+    let first_label = |text: &str| clean(text.split('.').next().unwrap_or(""));
+    let mut base = match found.account.split_once('@') {
+        Some((user, domain)) => {
+            let org = first_label(domain);
+            if org.is_empty() || PERSONAL_MAIL.contains(&org.as_str()) {
+                clean(user)
+            } else {
+                org
+            }
+        }
+        None => String::new(),
+    };
     if base.is_empty() {
-        base = clean(&found.suffix);
+        base = first_label(found.tailnet.split('@').next_back().unwrap_or(""));
+    }
+    if base.is_empty() {
+        base = first_label(&found.suffix);
     }
     if base.is_empty() {
         base = "tailnet".into();
@@ -306,13 +387,22 @@ async fn sign_in_new_tailnet(
             .owner(&format!("host.{}", found.suffix))
             .map(|(owner, _)| owner.to_string());
         match existing {
-            Some(owner) => owner,
+            Some(owner) => {
+                if let Some(prof) = cfg.profiles.get_mut(&owner) {
+                    prof.account = found.account.clone();
+                    prof.tailscale_logs = found.needs_logs;
+                }
+                cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+                owner
+            }
             None => {
                 let name = name_for_tailnet(&cfg, &found);
                 cfg.profiles.insert(
                     name.clone(),
                     Profile {
                         suffixes: vec![format!(".{}", found.suffix)],
+                        account: found.account.clone(),
+                        tailscale_logs: found.needs_logs,
                         ..Default::default()
                     },
                 );
@@ -338,7 +428,226 @@ async fn sign_in_new_tailnet(
     daemon::adopt_signin_state(&name).map_err(|e| format!("{e:#}"))?;
     start_inner(&state).await?;
     refresh_tray(&app);
+    notify(
+        &app,
+        "Tailnet signed in",
+        &format!("{name} is signed in and coming online."),
+    );
     Ok(name)
+}
+
+/// A native system notification; best effort.
+fn notify(app: &AppHandle, title: &str, body: &str) {
+    let _ = app.notification().builder().title(title).body(body).show();
+}
+
+/// Shown from the window for a problem the person may not be looking at.
+#[tauri::command]
+fn notify_user(app: AppHandle, title: String, body: String) {
+    notify(&app, &title, &body);
+}
+
+/// Point the system's browsers at Tailfuse, asking macOS for an
+/// administrator password. Done once; later starts find it in place.
+#[tauri::command]
+async fn connect_browsers(state: State<'_, SharedState>, app: AppHandle) -> Result<(), String> {
+    let cfg = state.cfg.lock().await.clone();
+    let pac_url = format!("http://{}/tailfuse.pac", cfg.router.listen);
+    let res = tauri::async_runtime::spawn_blocking(move || sysproxy::apply_with_prompt(&pac_url))
+        .await
+        .map_err(|e| e.to_string())?;
+    match res {
+        Ok(()) => {
+            state.proxy_problem.lock().await.clear();
+            notify(
+                &app,
+                "Browsers connected",
+                "Your tailnet addresses now open in your browser as usual.",
+            );
+            Ok(())
+        }
+        Err(e) => Err(format!("{e:#}")),
+    }
+}
+
+/// Take Tailfuse's automatic proxy address out of the system settings.
+#[tauri::command]
+async fn disconnect_browsers(state: State<'_, SharedState>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(sysproxy::clear_with_prompt)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{e:#}"))?;
+    if state.running.lock().await.is_some() {
+        *state.proxy_problem.lock().await = "permission".into();
+    }
+    Ok(())
+}
+
+/// Where the `tailfuse` command is installed, if it is.
+fn cli_path() -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "tailfuse.exe"
+    } else {
+        "tailfuse"
+    };
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    // A menu-bar app's PATH is short; look where the installer puts it too.
+    dirs.push(PathBuf::from("/usr/local/bin"));
+    dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        dirs.push(home.join(".local/bin"));
+        dirs.push(home.join(".cargo/bin"));
+    }
+    dirs.into_iter().map(|d| d.join(name)).find(|p| p.exists())
+}
+
+/// Run a program, returning its trimmed stdout or a readable error.
+#[cfg(not(windows))]
+fn run_tool(program: &str, args: &[&str]) -> Result<String, String> {
+    let out = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| format!("could not run {program}: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "{program} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Download the `tailfuse` command for this computer from the latest release,
+/// check it against the release's published SHA-256, and put it on the PATH:
+/// /usr/local/bin on macOS (macOS asks for an administrator password),
+/// ~/.local/bin on Linux.
+#[cfg(not(windows))]
+fn install_cli_blocking() -> Result<String, String> {
+    let (platform, sums) = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", _) => ("macos", "SHA256SUMS-macos.txt"),
+        ("linux", "aarch64") => ("linux-arm64", "SHA256SUMS-linux.txt"),
+        ("linux", _) => ("linux-amd64", "SHA256SUMS-linux.txt"),
+        _ => return Err("there is no tailfuse command for this system yet".into()),
+    };
+    let work = config::state_dir().join("cli-install");
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+    let archive = work.join("tailfuse.tar.gz");
+    let archive_s = archive.to_string_lossy().to_string();
+    let work_s = work.to_string_lossy().to_string();
+
+    // The site redirects to the release asset; curl reports where it landed.
+    let landed = run_tool(
+        "curl",
+        &[
+            "-fsSL",
+            "--max-time",
+            "120",
+            "-o",
+            &archive_s,
+            "-w",
+            "%{url_effective}",
+            &format!("https://tailfuse.com/download/cli/{platform}"),
+        ],
+    )?;
+    let asset = landed.rsplit('/').next().unwrap_or_default().to_string();
+    let base = landed
+        .strip_suffix(asset.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if !asset.ends_with(".tar.gz") || !base.starts_with("https://") {
+        return Err("the download did not lead to a release file".into());
+    }
+    let published = run_tool(
+        "curl",
+        &["-fsSL", "--max-time", "60", &format!("{base}{sums}")],
+    )?;
+    let want = published
+        .lines()
+        .find(|l| l.trim_end().ends_with(asset.as_str()))
+        .and_then(|l| l.split_whitespace().next())
+        .ok_or("the release does not list a checksum for this file")?
+        .to_lowercase();
+    let got = run_tool("shasum", &["-a", "256", &archive_s])
+        .or_else(|_| run_tool("sha256sum", &[&archive_s]))?;
+    let got = got
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+    if got != want {
+        return Err(
+            "the download did not match the release's checksum, so it was not installed".into(),
+        );
+    }
+    run_tool("tar", &["-xzf", &archive_s, "-C", &work_s])?;
+    let binary = work.join("tailfuse");
+    if !binary.exists() {
+        return Err("the download did not contain the tailfuse command".into());
+    }
+    let binary_s = binary.to_string_lossy().to_string();
+
+    #[cfg(target_os = "macos")]
+    let dest = {
+        let script = r#"on run argv
+do shell script "/bin/mkdir -p /usr/local/bin && /usr/bin/install -m 755 " & quoted form of (item 1 of argv) & " /usr/local/bin/tailfuse" with prompt "Tailfuse wants to install the tailfuse command." with administrator privileges
+end run"#;
+        let out = std::process::Command::new("osascript")
+            .args(["-e", script, &binary_s])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            let why = String::from_utf8_lossy(&out.stderr);
+            return Err(if why.contains("-128") {
+                "you cancelled the password prompt".into()
+            } else {
+                format!("macOS did not install it: {}", why.trim())
+            });
+        }
+        PathBuf::from("/usr/local/bin/tailfuse")
+    };
+    #[cfg(not(target_os = "macos"))]
+    let dest = {
+        let dir = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or("no home folder")?
+            .join(".local/bin");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let dest = dir.join("tailfuse");
+        run_tool(
+            "install",
+            &["-m", "755", &binary_s, &dest.to_string_lossy()],
+        )?;
+        dest
+    };
+    let _ = std::fs::remove_dir_all(&work);
+    Ok(format!(
+        "installed at {}. Open a new terminal and run: tailfuse status",
+        dest.display()
+    ))
+}
+
+#[cfg(windows)]
+fn install_cli_blocking() -> Result<String, String> {
+    Err("on Windows, download it from tailfuse.com/download/cli/windows".into())
+}
+
+/// Install the `tailfuse` command-line tool.
+#[tauri::command]
+async fn install_cli() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(install_cli_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Disconnect the official Tailscale app; it stays signed in.
+#[tauri::command]
+async fn disconnect_tailscale_app() -> Result<(), String> {
+    daemon::official_tailscale_disconnect()
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -484,14 +793,14 @@ fn show_main_window(app: &AppHandle) {
 }
 
 fn build_tray(app: &AppHandle) -> Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show tailfuse", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit tailfuse", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show Tailfuse", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Tailfuse", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     // The menu-bar glyph: full-colour ochre nodes, readable on light and dark bars.
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-36.png"))?;
     let builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .tooltip("tailfuse")
+        .tooltip("Tailfuse")
         .icon(icon)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
@@ -521,6 +830,7 @@ fn build_tray(app: &AppHandle) -> Result<()> {
                         };
                         if let Err(e) = res {
                             tracing::warn!("tray toggle: {e}");
+                            notify(&app, "Tailfuse could not turn on", &e);
                         }
                         refresh_tray(&app);
                     });
@@ -594,6 +904,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -602,6 +913,7 @@ pub fn run() {
             cfg_path,
             cfg: Mutex::new(cfg),
             running: Mutex::new(None),
+            proxy_problem: Mutex::new(String::new()),
         }))
         .setup(move |app| {
             // Menu-bar behavior on macOS: no Dock icon, window hidden at
@@ -647,6 +959,11 @@ pub fn run() {
             add_profile,
             import_from_tailscale,
             sign_in_new_tailnet,
+            disconnect_tailscale_app,
+            connect_browsers,
+            disconnect_browsers,
+            notify_user,
+            install_cli,
             remove_profile,
             add_tunnel,
             remove_tunnel,

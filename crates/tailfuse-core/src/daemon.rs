@@ -32,6 +32,23 @@ pub struct ProfileStatus {
     pub hostname: String,
     pub tailscale_ips: Vec<String>,
     pub error: String,
+    /// The login this node is signed in with, when known.
+    pub account: String,
+}
+
+/// What Tailscale reports when a tailnet's policy needs its logging left on.
+const LOGGING_REQUIRED: &str = "requires logging";
+
+/// The login name of the signed-in user in a `tailscale status --json` text.
+fn account_from_status(text: &str) -> String {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
+        return String::new();
+    };
+    let id = v["Self"]["UserID"].to_string();
+    v["User"][id.as_str()]["LoginName"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,6 +59,8 @@ struct StatusJson {
     self_: Option<SelfJson>,
     #[serde(rename = "TailscaleIPs")]
     tailscale_ips: Option<Vec<String>>,
+    #[serde(rename = "Health")]
+    health: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,17 +158,21 @@ impl DaemonSet {
                 .open(&log_path)?;
             let err_file = log_file.try_clone()?;
 
-            let child = Command::new(&tailscaled)
-                .args([
-                    "--tun=userspace-networking".as_ref(),
-                    OsStr::new("--statedir"),
-                    state_dir.as_os_str(),
-                    OsStr::new("--socket"),
-                    socket.as_os_str(),
-                    OsStr::new("--socks5-server"),
-                    OsStr::new(&format!("127.0.0.1:{socks_port}")),
-                    OsStr::new("--no-logs-no-support"),
-                ])
+            let mut cmd = Command::new(&tailscaled);
+            cmd.args([
+                "--tun=userspace-networking".as_ref(),
+                OsStr::new("--statedir"),
+                state_dir.as_os_str(),
+                OsStr::new("--socket"),
+                socket.as_os_str(),
+                OsStr::new("--socks5-server"),
+                OsStr::new(&format!("127.0.0.1:{socks_port}")),
+            ]);
+            // Tailscale's own log upload stays off unless the tailnet demands it.
+            if !prof.tailscale_logs {
+                cmd.arg("--no-logs-no-support");
+            }
+            let child = cmd
                 .stdin(Stdio::null())
                 .stdout(Stdio::from(log_file))
                 .stderr(Stdio::from(err_file))
@@ -198,6 +221,22 @@ impl DaemonSet {
             match tailscale_cli(&r.socket, &["status", "--json"]).await {
                 Ok(text) => match serde_json::from_str::<StatusJson>(&text) {
                     Ok(st) => {
+                        ps.account = account_from_status(&text);
+                        if st
+                            .health
+                            .iter()
+                            .flatten()
+                            .any(|h| h.contains(LOGGING_REQUIRED))
+                        {
+                            ps.error = "This tailnet requires Tailscale's logging. Remove it here and add it again with Sign in with Tailscale.".into();
+                        } else if st.backend_state.as_deref() == Some("Stopped") {
+                            // Signed in but not connected: connect it.
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                tailscale_cli(&r.socket, &["up", "--accept-dns=false"]),
+                            )
+                            .await;
+                        }
                         ps.online = st.backend_state.as_deref() == Some("Running");
                         if let Some(s) = st.self_ {
                             ps.hostname = s.hostname.unwrap_or_default();
@@ -273,6 +312,69 @@ pub async fn detect_official_tailnet_suffix() -> Option<String> {
     let st: St = serde_json::from_slice(&out.stdout).ok()?;
     st.current.and_then(|t| t.magic).or(st.magic)
 }
+/// The official Tailscale client on this machine, when it is connected.
+#[derive(Debug, Clone, Default)]
+pub struct OfficialTailscale {
+    /// The tailnet's display name, e.g. `example.com`.
+    pub tailnet: String,
+    /// MagicDNS suffix without the leading dot.
+    pub suffix: String,
+    /// The login it is signed in with.
+    pub account: String,
+}
+
+/// `Some` while the official Tailscale client is installed and connected.
+pub async fn official_tailscale() -> Option<OfficialTailscale> {
+    let bin = find_tailscale()?;
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(4),
+        Command::new(bin)
+            .args(["status", "--json"])
+            .stdin(Stdio::null())
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let st: LoginStatus = serde_json::from_str(&text).ok()?;
+    if st.backend_state.as_deref() != Some("Running") {
+        return None;
+    }
+    Some(OfficialTailscale {
+        tailnet: st
+            .current
+            .as_ref()
+            .and_then(|t| t.name.clone())
+            .unwrap_or_default(),
+        suffix: st
+            .current
+            .and_then(|t| t.magic)
+            .or(st.magic)
+            .unwrap_or_default(),
+        account: account_from_status(&text),
+    })
+}
+
+/// Disconnect the official Tailscale client (`tailscale down`). It stays
+/// signed in and can be reconnected from its own menu.
+pub async fn official_tailscale_disconnect() -> Result<()> {
+    let bin = find_tailscale().context("tailscale CLI not found")?;
+    let out = Command::new(bin)
+        .arg("down")
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .context("running tailscale down")?;
+    if !out.status.success() {
+        bail!(
+            "Tailscale would not disconnect: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// Begin authenticating a profile. Returns `None` when the profile used an
 /// auth key (already done), `Some(url)` for interactive login — the caller
 /// shows/opens the URL and then calls [`login_wait`].
@@ -307,6 +409,10 @@ struct LoginStatus {
     current: Option<TailnetJson>,
     #[serde(rename = "MagicDNSSuffix")]
     magic: Option<String>,
+    #[serde(rename = "Health")]
+    health: Option<Vec<String>>,
+    #[serde(skip)]
+    account: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -319,7 +425,9 @@ struct TailnetJson {
 
 async fn login_status(socket: &Path) -> Option<LoginStatus> {
     let text = tailscale_cli(socket, &["status", "--json"]).await.ok()?;
-    serde_json::from_str(&text).ok()
+    let mut st: LoginStatus = serde_json::from_str(&text).ok()?;
+    st.account = account_from_status(&text);
+    Some(st)
 }
 
 /// Ask the daemon on `socket` for an interactive login and return the page to
@@ -359,6 +467,8 @@ const SIGNIN_SLOT: &str = "signin-pending";
 pub struct NewTailnet {
     child: Child,
     socket: PathBuf,
+    /// Running with Tailscale's logging allowed (the tailnet asked for it).
+    logs: bool,
     /// The page to open in a browser.
     pub url: Option<String>,
 }
@@ -370,16 +480,19 @@ pub struct SignedIn {
     pub suffix: String,
     /// The tailnet's display name, e.g. `example.com`; may be empty.
     pub tailnet: String,
+    /// The login used, e.g. `someone@example.com`; may be empty.
+    pub account: String,
+    /// The tailnet requires Tailscale's logging to stay on.
+    pub needs_logs: bool,
 }
 
-/// Start signing in to a tailnet that is not configured yet.
-pub async fn new_tailnet_start() -> Result<NewTailnet> {
+/// Start the throwaway tailscaled for a sign-in and wait for its socket.
+async fn spawn_signin_daemon(allow_logs: bool) -> Result<Child> {
     let tailscaled = find_tailscaled().context(
         "tailscaled not found — install Tailscale (https://tailscale.com/download) or set TAILSCALED_PATH",
     )?;
     let state_dir = config::profile_state_dir(SIGNIN_SLOT);
     let socket = config::profile_socket(SIGNIN_SLOT);
-    let _ = std::fs::remove_dir_all(&state_dir);
     std::fs::create_dir_all(&state_dir)?;
     if socket.exists() {
         let _ = std::fs::remove_file(&socket);
@@ -390,15 +503,18 @@ pub async fn new_tailnet_start() -> Result<NewTailnet> {
         .append(true)
         .open(&log_path)?;
     let err_file = log_file.try_clone()?;
-    let child = Command::new(&tailscaled)
-        .args([
-            "--tun=userspace-networking".as_ref(),
-            OsStr::new("--statedir"),
-            state_dir.as_os_str(),
-            OsStr::new("--socket"),
-            socket.as_os_str(),
-            OsStr::new("--no-logs-no-support"),
-        ])
+    let mut cmd = Command::new(&tailscaled);
+    cmd.args([
+        "--tun=userspace-networking".as_ref(),
+        OsStr::new("--statedir"),
+        state_dir.as_os_str(),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+    ]);
+    if !allow_logs {
+        cmd.arg("--no-logs-no-support");
+    }
+    let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(err_file))
@@ -412,8 +528,21 @@ pub async fn new_tailnet_start() -> Result<NewTailnet> {
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
+    Ok(child)
+}
+
+/// Start signing in to a tailnet that is not configured yet.
+pub async fn new_tailnet_start() -> Result<NewTailnet> {
+    let _ = std::fs::remove_dir_all(config::profile_state_dir(SIGNIN_SLOT));
+    let child = spawn_signin_daemon(false).await?;
+    let socket = config::profile_socket(SIGNIN_SLOT);
     let url = begin_browser_login(&socket).await?;
-    Ok(NewTailnet { child, socket, url })
+    Ok(NewTailnet {
+        child,
+        socket,
+        logs: false,
+        url,
+    })
 }
 
 impl NewTailnet {
@@ -424,21 +553,49 @@ impl NewTailnet {
         let mut found = None;
         for _ in 0..150 {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            if let Some(st) = login_status(&self.socket).await {
-                if st.backend_state.as_deref() == Some("Running") {
-                    let tailnet = st
-                        .current
-                        .as_ref()
-                        .and_then(|t| t.name.clone())
-                        .unwrap_or_default();
-                    let suffix = st.current.and_then(|t| t.magic).or(st.magic);
-                    if let Some(suffix) = suffix.filter(|s| !s.is_empty()) {
-                        found = Some(SignedIn {
-                            suffix: suffix.trim_matches('.').to_lowercase(),
-                            tailnet,
-                        });
-                        break;
-                    }
+            let Some(st) = login_status(&self.socket).await else {
+                continue;
+            };
+            // Some tailnets refuse a node whose Tailscale logging is off: the
+            // login is done, so carry on with the same state, logging allowed.
+            if !self.logs
+                && st
+                    .health
+                    .iter()
+                    .flatten()
+                    .any(|h| h.contains(LOGGING_REQUIRED))
+            {
+                let _ = self.child.start_kill();
+                let _ = self.child.wait().await;
+                self.child = spawn_signin_daemon(true).await?;
+                self.logs = true;
+                continue;
+            }
+            let state = st.backend_state.as_deref().unwrap_or_default();
+            let suffix = st
+                .current
+                .as_ref()
+                .and_then(|t| t.magic.clone())
+                .or(st.magic.clone())
+                .filter(|s| !s.is_empty());
+            // Signed in but not connected (it was held back before): connect it.
+            if state == "Stopped" && suffix.is_some() {
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    tailscale_cli(&self.socket, &["up", "--accept-dns=false"]),
+                )
+                .await;
+                continue;
+            }
+            if state == "Running" {
+                if let Some(suffix) = suffix {
+                    found = Some(SignedIn {
+                        suffix: suffix.trim_matches('.').to_lowercase(),
+                        tailnet: st.current.and_then(|t| t.name).unwrap_or_default(),
+                        account: st.account,
+                        needs_logs: self.logs,
+                    });
+                    break;
                 }
             }
         }

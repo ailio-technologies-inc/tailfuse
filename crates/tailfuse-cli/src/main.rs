@@ -496,6 +496,7 @@ async fn cmd_profile(action: ProfileAction) -> Result<()> {
                     exit_node: exit_node.unwrap_or_default(),
                     auth_key: auth_key.unwrap_or_default(),
                     ephemeral,
+                    ..Default::default()
                 },
             );
             cfg.validate()?;

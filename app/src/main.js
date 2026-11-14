@@ -32,14 +32,41 @@ function sentence(text) {
   return /[.!?]$/.test(cased) ? cased : `${cased}.`;
 }
 
-// One place for things that went wrong, in the window instead of a system alert.
+// Turn the app's raw messages into something a person can act on.
+function friendly(err) {
+  const raw = String(err?.message ?? err);
+  if (/tailscaled not found|tailscale CLI not found/i.test(raw)) {
+    return ["Tailscale isn't installed", "Tailfuse runs on Tailscale's own software. Install Tailscale from tailscale.com/download, then try again."];
+  }
+  if (/requires a license/i.test(raw)) {
+    return ["That needs a license key", "Two tailnets are free. Get a key at tailfuse.com (the donation is optional) and paste it under License."];
+  }
+  if (/address already in use|router:/i.test(raw)) {
+    return ["Tailfuse's port is busy", "Another program, or a second copy of Tailfuse, is using port 43100. Quit it and turn Tailfuse on again."];
+  }
+  if (/cancelled the password prompt/i.test(raw)) {
+    return ["Nothing was changed", "You closed the password prompt. Try again when you're ready."];
+  }
+  if (/not finished in time/i.test(raw)) {
+    return ["The sign-in ran out of time", "Start it again and finish in the browser page within a few minutes."];
+  }
+  if (/no profiles defined/i.test(raw)) {
+    return ["Add a tailnet first", "Use Sign in with Tailscale, then turn Tailfuse on."];
+  }
+  return ["Something went wrong", sentence(raw)];
+}
+
+// One place for things that went wrong: in the window, and as a system notification when the
+// window is not the one in front.
 let errorTimer = 0;
 function showError(err) {
-  const el = $("#error");
-  el.textContent = sentence(err);
-  el.hidden = false;
+  const [title, text] = friendly(err);
+  $("#error-title").textContent = title;
+  $("#error-text").textContent = text;
+  $("#error").hidden = false;
   clearTimeout(errorTimer);
-  errorTimer = setTimeout(() => (el.hidden = true), 9000);
+  errorTimer = setTimeout(() => ($("#error").hidden = true), 15000);
+  if (!document.hasFocus()) invoke("notify_user", { title, body: text }).catch(() => {});
 }
 
 async function call(cmd, args) {
@@ -63,10 +90,12 @@ function statusLine(s) {
   const broken = s.profiles.filter((p) => p.error);
   if (broken.length) return `${broken[0].name} has a problem. See the note beside it.`;
   if (waiting.length) return `Sign in to ${waiting.map((p) => p.name).join(" and ")} to bring ${waiting.length === 1 ? "it" : "them"} online.`;
+  if (s.proxy_problem) return `${plural(online, "tailnet")} online. One more step before your browser can reach ${online === 1 ? "it" : "them"}.`;
   return `${plural(online, "tailnet")} online. Open any of their addresses in your browser as usual.`;
 }
 
 let lastState = null;
+let cliBusy = false;
 const pendingRemove = new Map(); // "profile:work" -> timer, for the two-step Remove
 
 function removeButton(kind, name) {
@@ -83,6 +112,7 @@ function profileEntry(p, up) {
     h("div", { class: "entry-main" },
       h("strong", null, p.name),
       h("span", { class: "muted" }, "Addresses ending in ", h("span", { class: "mono" }, p.suffixes.join(", "))),
+      p.account && h("span", { class: "muted" }, `Signed in as ${p.account}`),
       where && h("span", { class: "muted" }, `This computer there: ${where}`),
       p.error && h("span", { class: "muted bad" }, p.error),
     ),
@@ -113,7 +143,28 @@ function render(s) {
   $("#power-label").classList.toggle("on", s.up);
   $("#status").textContent = statusLine(s);
   $("#license").textContent = s.license;
+
+  // Browsers only reach the tailnets once the system points them at Tailfuse.
+  $("#proxy-note").hidden = !s.proxy_problem;
+  const needsYou = s.proxy_problem === "permission";
+  $("#proxy-fix").hidden = !needsYou;
+  $("#proxy-why").textContent = needsYou
+    ? "Your tailnets are online, but your browsers don't know to use Tailfuse yet. macOS asks for your password once to allow it."
+    : `${sentence(s.proxy_problem || "")} You can still set it by hand: see Advanced, under Settings.`;
   $("#pac-url").textContent = s.pac_url;
+
+  // The official Tailscale app, while it is connected alongside Tailfuse.
+  const app = s.tailscale_app;
+  $("#ts-app").hidden = !app;
+  if (app) {
+    const who = [app.tailnet, app.account && `as ${app.account}`].filter(Boolean).join(" ");
+    $("#ts-app-text").textContent = app.same_as
+      ? `It is on ${who}, the same tailnet as ${app.same_as} here. The two work side by side; disconnect it to let Tailfuse carry that tailnet alone.`
+      : `It is on ${who || "another tailnet"}. The two work side by side; disconnect it if you want Tailfuse to carry everything.`;
+  }
+
+  $("#cli-install").textContent = s.cli ? "Reinstall the command" : "Install the command";
+  if (!cliBusy) $("#cli-text").textContent = s.cli ? `Installed at ${s.cli}. In a terminal: tailfuse status` : "For a terminal: tailfuse status, tailfuse ssh and more.";
 
   const count = s.profiles.length;
   $("#profile-hint").textContent = count === 0 ? "" : count <= 2 ? `${count} of 2 free tailnets used` : `${count} tailnets, licensed`;
@@ -165,7 +216,28 @@ if (!invoke) {
     if (!target) return;
 
     if (target.dataset.close) return toggleForm(target.dataset.close, false);
-    if (target.id === "show-add-profile") return toggleForm("add-profile", true);
+    if (target.id === "error-close") return void ($("#error").hidden = true);
+
+    if (target.id === "proxy-fix" || target.id === "proxy-remove") {
+      target.disabled = true;
+      await call(target.id === "proxy-fix" ? "connect_browsers" : "disconnect_browsers").catch(() => {});
+      target.disabled = false;
+      return refresh();
+    }
+
+    if (target.id === "cli-install") {
+      cliBusy = true;
+      target.disabled = true;
+      $("#cli-text").textContent = "Downloading the command and checking it.";
+      try {
+        $("#cli-text").textContent = sentence(await invoke("install_cli"));
+      } catch (err) {
+        $("#cli-text").textContent = friendly(err)[1];
+      }
+      target.disabled = false;
+      setTimeout(() => (cliBusy = false), 20000);
+      return refresh();
+    }
     if (target.id === "show-add-tunnel") return toggleForm("add-tunnel", true);
 
     if (target.dataset.login) {
@@ -191,6 +263,13 @@ if (!invoke) {
       return refresh();
     }
 
+    if (target.id === "ts-app-off") {
+      target.disabled = true;
+      await call("disconnect_tailscale_app").catch(() => {});
+      target.disabled = false;
+      return refresh();
+    }
+
     if (target.id === "get-key") {
       call("plugin:opener|open_url", { url: "https://tailfuse.com/#pricing" }).catch(() => {});
     }
@@ -212,20 +291,6 @@ if (!invoke) {
     }
     button.disabled = false;
     button.textContent = "Sign in with Tailscale";
-    refresh();
-  });
-
-  $("#add-profile").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    let suffix = $("#p-suffix").value.trim();
-    if (suffix && !suffix.startsWith(".")) suffix = `.${suffix}`;
-    try {
-      await call("add_profile", { name: $("#p-name").value.trim(), suffixes: [suffix] });
-      e.target.reset();
-      toggleForm("add-profile", false);
-    } catch {
-      // the error line already says why
-    }
     refresh();
   });
 

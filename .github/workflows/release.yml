@@ -49,7 +49,9 @@ jobs:
           case "$VERSION" in [0-9]*.[0-9]*.[0-9]*) ;; *) VERSION=0.0.0 ;; esac
           cd app
           npm ci
-          npx tauri build --target universal-apple-darwin --bundles dmg --config "{\"version\":\"$VERSION\"}"
+          # No Developer ID certificate here: sign ad hoc. The notarized dmg is built on the
+          # release machine (scripts/notarize-macos.sh) and replaces this one on the release.
+          npx tauri build --target universal-apple-darwin --bundles dmg --config "{\"version\":\"$VERSION\",\"bundle\":{\"macOS\":{\"signingIdentity\":\"-\"}}}"
           cp ../target/universal-apple-darwin/release/bundle/dmg/*.dmg "../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-macos-universal.dmg"
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}

@@ -58,6 +58,13 @@ pub struct Profile {
     pub auth_key: String,
     #[serde(default)]
     pub ephemeral: bool,
+    /// The login this tailnet was signed in with (shown in the app).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub account: String,
+    /// This tailnet requires Tailscale's own logging, so its node runs
+    /// without `--no-logs-no-support`. Set by the app's browser sign-in.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tailscale_logs: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

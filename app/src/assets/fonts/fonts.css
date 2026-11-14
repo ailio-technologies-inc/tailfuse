@@ -1,28 +1,16 @@
+/* The same faces as tailfuse.com, self-hosted (the app loads nothing from the network).
+   Both files are variable fonts, Latin subset, from Google Fonts (SIL Open Font License). */
 @font-face {
-  font-family: 'Chivo';
+  font-family: 'Host Grotesk';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 400 700;
   font-display: swap;
-  src: url('chivo-400.woff2') format('woff2');
+  src: url('host-grotesk-latin.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Chivo';
+  font-family: 'JetBrains Mono';
   font-style: normal;
-  font-weight: 500;
+  font-weight: 400 500;
   font-display: swap;
-  src: url('chivo-500.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Chivo Mono';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('chivomono-400.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Chivo Mono';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('chivomono-500.woff2') format('woff2');
+  src: url('jetbrains-mono-latin.woff2') format('woff2');
 }

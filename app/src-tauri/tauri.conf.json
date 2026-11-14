@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tailfuse",
+  "productName": "Tailfuse",
   "version": "0.1.3",
   "identifier": "com.ailio.tailfuse",
   "build": {
@@ -10,7 +10,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "tailfuse",
+        "title": "Tailfuse",
         "width": 720,
         "height": 560,
         "minWidth": 560,

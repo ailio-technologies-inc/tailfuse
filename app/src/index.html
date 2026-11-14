@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" data-type="software" data-radius="soft">
+<html lang="en" data-type="software" data-radius="sharp" data-buttons="pill">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>tailfuse</title>
+    <title>Tailfuse</title>
     <meta name="description" content="Tailfuse keeps several Tailscale tailnets online at once and sends each address to the tailnet that owns it." />
     <meta name="page-type" content="software" />
     <meta name="site-kind" content="software" />
@@ -13,10 +13,11 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- plan: kind software · palette limewash-ochre · type chivo · radius soft · one utility window. Written for the person using it: plain words, one clear next step, the set-up forms out of sight until asked for, the technical detail under Advanced. -->
+    <!-- plan: kind software · the look of tailfuse.com (graphite and safety orange, Host Grotesk with JetBrains Mono, pill buttons, sharp radius) · one utility window. Written for the person using it: plain words, one clear next step, the set-up forms out of sight until asked for, the technical detail under Advanced. -->
     <header class="titlebar" data-tauri-drag-region="deep">
       <div class="brand">
-        <h1>tailfuse</h1>
+        <svg class="brand-mark" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="12" r="2.9"></circle><path d="M8.4 10.1C10.6 8.2 12.2 7.3 15.4 7.3H21.5M8.4 13.9C10.6 15.8 12.2 16.7 15.4 16.7H21.5"></path></svg>
+        <h1>Tailfuse</h1>
       </div>
       <div class="header-actions">
         <span id="power-label" class="power-label">Off</span>
@@ -29,7 +30,27 @@
 
     <div class="body" role="main">
       <p id="status" class="status" role="status">Loading your tailnets.</p>
-      <p id="error" class="notice notice--bad" role="alert" hidden></p>
+      <div id="error" class="notice notice--bad" role="alert" hidden>
+        <div class="notice-text">
+          <strong id="error-title">Something went wrong</strong>
+          <p id="error-text"></p>
+        </div>
+        <button type="button" class="btn btn--secondary btn--sm" id="error-close">Dismiss</button>
+      </div>
+      <div id="proxy-note" class="notice notice--warn" hidden>
+        <div class="notice-text">
+          <strong>One step left: connect your browsers</strong>
+          <p id="proxy-why"></p>
+        </div>
+        <button type="button" class="btn btn--primary btn--sm" id="proxy-fix">Connect my browsers</button>
+      </div>
+      <div id="ts-app" class="notice notice--info" hidden>
+        <div class="notice-text">
+          <strong>The Tailscale app is also connected</strong>
+          <p id="ts-app-text"></p>
+        </div>
+        <button id="ts-app-off" type="button" class="btn btn--secondary btn--sm">Disconnect it</button>
+      </div>
 
       <section class="pane" aria-labelledby="tailnets-h">
         <div class="pane-head">
@@ -43,25 +64,8 @@
         </div>
         <div class="pane-tools">
           <button id="signin-new" type="button" class="btn btn--primary btn--sm">Sign in with Tailscale</button>
-          <button id="show-add-profile" type="button" class="btn btn--secondary btn--sm" aria-expanded="false" aria-controls="add-profile">Set one up by hand</button>
         </div>
         <p class="hint" id="signin-msg" role="status"></p>
-        <form id="add-profile" class="form" hidden>
-          <label class="field">
-            <span>Name</span>
-            <input id="p-name" placeholder="work" required autocomplete="off" autocapitalize="off" spellcheck="false" />
-            <small>A short name you choose.</small>
-          </label>
-          <label class="field">
-            <span>Addresses it owns</span>
-            <input id="p-suffix" placeholder=".work.ts.net" required autocomplete="off" autocapitalize="off" spellcheck="false" />
-            <small>Every address ending in this goes to this tailnet.</small>
-          </label>
-          <div class="form-actions">
-            <button type="submit" class="btn btn--primary btn--sm">Add tailnet</button>
-            <button type="button" class="btn btn--secondary btn--sm" data-close="add-profile">Cancel</button>
-          </div>
-        </form>
       </section>
 
       <section class="pane" aria-labelledby="check-h">
@@ -129,10 +133,18 @@
           <input type="checkbox" id="autostart" />
           <span>Open Tailfuse when I log in</span>
         </label>
+        <div class="setting">
+          <div class="notice-text">
+            <strong>The tailfuse command</strong>
+            <p id="cli-text">For a terminal: tailfuse status, tailfuse ssh and more.</p>
+          </div>
+          <button type="button" class="btn btn--secondary btn--sm" id="cli-install">Install the command</button>
+        </div>
         <details class="advanced">
           <summary>Advanced</summary>
-          <p class="hint">While Tailfuse is on, it points your system's browsers at this set-up address (macOS and Windows) and clears it when you quit. For a browser you configure by hand, use it as the automatic proxy (PAC) address.</p>
+          <p class="hint">For a browser you set up by hand, use this as its automatic proxy (PAC) address:</p>
           <p><code id="pac-url"></code></p>
+          <button type="button" class="btn btn--secondary btn--sm" id="proxy-remove">Stop sending my browsers to Tailfuse</button>
         </details>
       </section>
     </div>
