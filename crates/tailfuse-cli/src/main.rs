@@ -240,8 +240,10 @@ async fn cmd_up(no_pac: bool) -> Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let router_addr = router
         .clone()
-        .serve(&cfg.router.listen, shutdown_rx)
+        .serve(&cfg.router.listen, shutdown_rx.clone())
         .await?;
+    // Learn the domains and devices each tailnet serves (split DNS, custom domains).
+    daemon::spawn_learning(set.clone(), router.routes(), shutdown_rx);
     println!("router listening on {router_addr} (PAC: http://{router_addr}/tailfuse.pac)");
 
     // Tunnels.
@@ -361,7 +363,8 @@ async fn cmd_run(command: Vec<String>) -> Result<()> {
     let routes = router::RouteTable::build(&cfg, &socks_ports);
     let router = Arc::new(router::Router::new(&cfg, &cfg.router.listen, routes));
     let (_tx, rx) = watch::channel(false);
-    router.clone().serve(&cfg.router.listen, rx).await?;
+    router.clone().serve(&cfg.router.listen, rx.clone()).await?;
+    daemon::spawn_learning(set.clone(), router.routes(), rx);
     let addr = cfg.router.listen.clone();
 
     let mut child = tokio::process::Command::new(cmd)

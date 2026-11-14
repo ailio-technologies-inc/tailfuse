@@ -103,6 +103,7 @@ Suffix ownership is strict. Each suffix belongs to exactly one profile, and vali
 
 - **Profiles:** one `tailscaled --tun=userspace-networking` subprocess per tailnet, with its own state dir, socket, and dedicated local SOCKS5 port. Nothing touches the kernel routing table.
 - **Router:** a single loopback listener accepts both SOCKS5 and HTTP CONNECT, matches the destination hostname against suffix ownership (longest match wins), and forwards to that profile's SOCKS5. A name no profile owns is refused, with no fallback.
+- **Names a tailnet serves:** beyond your suffixes, each tailnet's own split-DNS domains route to it automatically, and so does a custom domain pointed at one of its devices (like `ailio.dev` resolving to a `100.x` address). Tailfuse finds such a name the first time it resolves it, remembers that exact host, and re-checks it every 30 seconds. An address or domain two tailnets both claim is refused, never guessed. The PAC file only compares names, so browsers never make an extra DNS lookup for it.
 - **PAC:** a generated proxy auto-config sends only owned suffixes through the router and everything else direct. It is served live at `/tailfuse.pac` and applied to the OS on `up`.
 - **Isolation:** profiles share no state, sockets, or routes, and config validation rejects overlapping suffixes.
 

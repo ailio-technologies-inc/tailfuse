@@ -10,6 +10,7 @@ Tailfuse is made by Ailio Technologies Inc. (https://ailio.ca). It is an indepen
 - Each tailnet runs in userspace networking mode (`tailscaled --tun=userspace-networking`): no TUN device, no routes, no DNS changes. An installed Tailscale client keeps its primary tailnet.
 - One local router on `127.0.0.1:43100` speaks SOCKS5 and HTTP CONNECT and serves a PAC file at `http://127.0.0.1:43100/tailfuse.pac`.
 - Routing is by hostname suffix. Each profile owns suffixes such as `.work.ts.net`; the longest match wins.
+- A tailnet also gets the names it serves itself: its split-DNS domains, and any hostname that resolves to one of its devices (a custom domain pointed at a 100.x address). Tailfuse learns these automatically; a name or address two tailnets both claim is refused.
 - A hostname no profile owns is refused, never sent to another tailnet. Browsers using the PAC file connect direct for those names.
 - Tunnels pin a local port to one tailnet service, for example `127.0.0.1:5432` to `db.work.ts.net:5432`.
 - Keys are locked to the user's account: each tailnet's node keys and control socket sit in a folder only that account can open; auth keys and the license key are kept in the macOS Keychain or Windows Credential Manager, not in the config file (on Linux the config file is readable only by the user).

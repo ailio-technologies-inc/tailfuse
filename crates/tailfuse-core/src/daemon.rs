@@ -120,7 +120,9 @@ struct RunningProfile {
     socket: PathBuf,
 }
 
-/// Owns the per-profile tailscaled processes of a running session.
+/// Owns the per-profile tailscaled processes of a running session. Clones
+/// share the same processes.
+#[derive(Clone)]
 pub struct DaemonSet {
     inner: Arc<Mutex<BTreeMap<String, RunningProfile>>>,
 }
@@ -233,6 +235,33 @@ impl DaemonSet {
             .await
             .get(profile)
             .map(|r| r.socket.clone())
+    }
+
+    /// What each running tailnet serves, for routing beyond configured suffixes:
+    /// the Tailscale addresses of its online devices (not this node's own) and
+    /// the domains its Tailscale DNS answers (split-DNS routes and search
+    /// domains). A tailnet that doesn't answer is left out of this round.
+    pub async fn learn(&self) -> Vec<(String, Vec<std::net::IpAddr>, Vec<String>)> {
+        let sockets: Vec<(String, PathBuf)> = self
+            .inner
+            .lock()
+            .await
+            .iter()
+            .map(|(n, r)| (n.clone(), r.socket.clone()))
+            .collect();
+        let mut out = Vec::new();
+        for (name, socket) in sockets {
+            let Ok(text) = tailscale_cli(&socket, &["status", "--json"]).await else {
+                continue;
+            };
+            let ips = online_peer_ips(&text);
+            let domains = tailscale_cli(&socket, &["dns", "status"])
+                .await
+                .map(|t| served_domains(&t))
+                .unwrap_or_default();
+            out.push((name, ips, domains));
+        }
+        out
     }
 
     /// Poll `tailscale status --json` per profile.
@@ -360,20 +389,114 @@ fn kill_with_tailfuse(child: &Child) {
     let _ = child;
 }
 
-/// Stop any `tailscaled` still serving `socket` (one per tailnet, so a match is
-/// always a leftover of ours). Unix only: Windows ends a job's children with it.
+/// Keep `routes` up to date with what each tailnet serves: now, then every 30
+/// seconds, until `shutdown` turns true.
+pub fn spawn_learning(
+    daemons: DaemonSet,
+    routes: std::sync::Arc<crate::router::RouteTable>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    tokio::spawn(async move {
+        let mut wait = std::time::Duration::from_secs(3);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(wait) => {}
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() { return; }
+                }
+            }
+            for (name, ips, domains) in daemons.learn().await {
+                routes.set_learned(&name, &ips, &domains);
+            }
+            routes.recheck_hosts().await;
+            wait = std::time::Duration::from_secs(30);
+        }
+    });
+}
+
+/// Tailscale addresses of the online peers in a `tailscale status --json`.
+fn online_peer_ips(text: &str) -> Vec<std::net::IpAddr> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
+        return Vec::new();
+    };
+    let Some(peers) = v["Peer"].as_object() else {
+        return Vec::new();
+    };
+    peers
+        .values()
+        .filter(|p| p["Online"].as_bool().unwrap_or(false))
+        .flat_map(|p| p["TailscaleIPs"].as_array().cloned().unwrap_or_default())
+        .filter_map(|ip| ip.as_str()?.parse().ok())
+        .collect()
+}
+
+/// The domains a tailnet's DNS answers, from `tailscale dns status`: its
+/// split-DNS routes and search domains. Tailscale's own `ts.net` route (the
+/// same on every tailnet) and single-label names are left out, so no tailnet
+/// claims another's MagicDNS names or a whole top-level domain.
+fn served_domains(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut section = "";
+    for line in text.lines() {
+        let t = line.trim();
+        if t.ends_with(':') && !t.starts_with('-') {
+            section = if t.starts_with("Split DNS Routes") {
+                "split"
+            } else if t == "Search Domains:" {
+                "search"
+            } else {
+                ""
+            };
+            continue;
+        }
+        if t.starts_with("===") {
+            section = "";
+            continue;
+        }
+        let Some(item) = t.strip_prefix("- ") else {
+            continue;
+        };
+        if section.is_empty() {
+            continue;
+        }
+        let domain = item
+            .split("->")
+            .next()
+            .unwrap_or("")
+            .trim()
+            .trim_end_matches('.')
+            .to_lowercase();
+        if domain.is_empty() || !domain.contains('.') || domain == "ts.net" {
+            continue;
+        }
+        if !out.contains(&domain) {
+            out.push(domain);
+        }
+    }
+    out
+}
+
+/// Stop any orphaned `tailscaled` still serving `socket`: one whose Tailfuse is
+/// gone, so the system has re-parented it to launchd/init (parent pid 1). A
+/// daemon whose parent is alive belongs to a running Tailfuse (the app, or a
+/// `tailfuse up` in a terminal) and is never touched. Unix only: on Windows the
+/// job object ends a Tailfuse's daemons with it.
 async fn stop_orphans(socket: &Path) {
     #[cfg(unix)]
     {
-        let Ok(out) = Command::new("ps").args(["-axo", "pid=,command="]).output().await else {
+        let Ok(out) = Command::new("ps").args(["-axo", "pid=,ppid=,command="]).output().await else {
             return;
         };
         let needle = format!("--socket {}", socket.display());
         let pids: Vec<i32> = String::from_utf8_lossy(&out.stdout)
             .lines()
             .filter(|l| l.contains("tailscaled") && orphan_matches(l, &needle))
-            .filter_map(|l| l.split_whitespace().next()?.parse().ok())
-            .filter(|&pid| pid != std::process::id() as i32)
+            .filter_map(|l| {
+                let mut f = l.split_whitespace();
+                let pid: i32 = f.next()?.parse().ok()?;
+                let ppid: i32 = f.next()?.parse().ok()?;
+                (ppid == 1).then_some(pid)
+            })
             .collect();
         if pids.is_empty() {
             return;
@@ -859,5 +982,23 @@ mod orphan_tests {
         assert!(!orphan_matches(line, "--socket /x/ail"));
         assert!(!orphan_matches(line, "--socket /x/change.sock"));
         assert!(orphan_matches("1 tailscaled --socket /x/a.sock", "--socket /x/a.sock"));
+    }
+}
+
+#[cfg(test)]
+mod learn_tests {
+    use super::{online_peer_ips, served_domains};
+
+    #[test]
+    fn domains_skip_ts_net_and_keep_split_and_search() {
+        let text = "=== MagicDNS configuration ===\n\nSplit DNS Routes:\n  - ts.net.                        -> 199.247.155.53\n  - ailio.dev.                     -> 100.100.100.100\n\nSearch Domains:\n  - tail8e2dc7.ts.net\n  - corp.example\n\n=== System DNS configuration ===\n\nSearch domains:\n  - localdomain\n";
+        assert_eq!(served_domains(text), vec!["ailio.dev", "tail8e2dc7.ts.net", "corp.example"]);
+    }
+
+    #[test]
+    fn only_online_peers_count() {
+        let text = r#"{"Peer":{"a":{"Online":true,"TailscaleIPs":["100.74.194.18","fd7a:115c:a1e0::1"]},"b":{"Online":false,"TailscaleIPs":["100.70.0.9"]}}}"#;
+        let ips: Vec<String> = online_peer_ips(text).iter().map(|i| i.to_string()).collect();
+        assert_eq!(ips, vec!["100.74.194.18", "fd7a:115c:a1e0::1"]);
     }
 }

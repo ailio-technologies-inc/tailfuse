@@ -4,18 +4,60 @@
 //! unowned names are refused — nothing ever leaks direct or cross-profile.
 
 use anyhow::{bail, Context, Result};
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::net::IpAddr;
+use std::sync::{Arc, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 
 use crate::pac;
 
-/// Routing table: hostname suffix -> (profile name, upstream SOCKS5 port).
+/// Routing table. A hostname goes to a tailnet by, in order:
+/// 1. a suffix in that profile's config (longest match wins);
+/// 2. a domain the tailnet itself serves through Tailscale DNS (split DNS or a
+///    search domain), learned from the running daemon;
+/// 3. its address: an IP literal of a device on that tailnet, or a name that
+///    resolves (in ordinary DNS) to one, like a custom domain pointed at a
+///    tailnet machine. Such a name is remembered as an exact host (never its
+///    whole domain) once Tailfuse has resolved it, so browsers can be sent to
+///    it from the PAC without a DNS lookup per site; it is re-checked each
+///    learning round and forgotten when it stops pointing at that tailnet.
+///
+/// Learned domains and addresses only count when exactly one tailnet claims
+/// them: tailnets hand out addresses from the same 100.64.0.0/10 range, and an
+/// ambiguous match is refused, never guessed.
 #[derive(Debug, Clone, Default)]
 pub struct RouteTable {
     by_suffix: BTreeMap<String, (String, u16)>,
+    ports: BTreeMap<String, u16>,
+    learned: Arc<RwLock<Learned>>,
+    /// Where remembered hosts are kept between sessions (None in tests).
+    hosts_file: Option<std::path::PathBuf>,
+}
+
+/// What each running tailnet reported about itself (DaemonSet::learn), plus
+/// the exact hosts found pointing at its devices.
+#[derive(Debug, Default)]
+struct Learned {
+    domains: BTreeMap<String, BTreeSet<String>>,
+    ips: HashMap<IpAddr, BTreeSet<String>>,
+    /// Exact hostname -> the one tailnet it points at.
+    hosts: BTreeMap<String, String>,
+}
+
+/// True for an address Tailscale assigns: 100.64.0.0/10 or fd7a:115c:a1e0::/48.
+pub fn is_tailscale_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            o[0] == 100 && (o[1] & 0xc0) == 64
+        }
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0
+        }
+    }
 }
 
 impl RouteTable {
@@ -29,12 +71,30 @@ impl RouteTable {
                 by_suffix.insert(s.trim().to_lowercase(), (name.clone(), port));
             }
         }
-        Self { by_suffix }
+        let hosts_file = crate::config::state_dir().join("learned-hosts.json");
+        let hosts: BTreeMap<String, String> = std::fs::read_to_string(&hosts_file)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let hosts = hosts
+            .into_iter()
+            .filter(|(_, p)| socks_ports.contains_key(p))
+            .collect();
+        Self {
+            by_suffix,
+            ports: socks_ports.clone(),
+            learned: Arc::new(RwLock::new(Learned {
+                hosts,
+                ..Default::default()
+            })),
+            hosts_file: Some(hosts_file),
+        }
     }
 
-    /// Longest matching suffix wins.
-    pub fn owner(&self, host: &str) -> Option<(&str, u16)> {
-        let host = host.trim_end_matches('.').to_lowercase();
+    /// The tailnet a hostname (or IP literal) goes to, without a DNS lookup:
+    /// configured suffix, then learned domain, then a known Tailscale address.
+    pub fn owner(&self, host: &str) -> Option<(String, u16)> {
+        let host = host.trim_end_matches('.').trim_matches(['[', ']']).to_lowercase();
         let mut best: Option<(&str, u16, usize)> = None;
         for (suffix, (profile, port)) in &self.by_suffix {
             if host.ends_with(suffix.as_str())
@@ -43,28 +103,189 @@ impl RouteTable {
                 best = Some((profile.as_str(), *port, suffix.len()));
             }
         }
-        best.map(|(p, port, _)| (p, port))
+        if let Some((p, port, _)) = best {
+            return Some((p.to_string(), port));
+        }
+        let learned = self.learned.read().ok()?;
+        // Longest learned domain that the host is, or is under.
+        let mut found: Option<(&BTreeSet<String>, usize)> = None;
+        for (domain, owners) in &learned.domains {
+            let hit = host == *domain || host.ends_with(&format!(".{domain}"));
+            if hit && found.map(|(_, l)| domain.len() > l).unwrap_or(true) {
+                found = Some((owners, domain.len()));
+            }
+        }
+        if let Some((owners, _)) = found {
+            return self.only(owners);
+        }
+        if let Some(profile) = learned.hosts.get(&host) {
+            return self.ports.get(profile).map(|p| (profile.clone(), *p));
+        }
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            return learned.ips.get(&ip).and_then(|o| self.only(o));
+        }
+        None
+    }
+
+    /// Like [`owner`](Self::owner), and when nothing matches, resolve the name
+    /// and route it if it points at a device on exactly one tailnet; such a
+    /// name is then remembered, so browsers reach it too.
+    pub async fn resolve_owner(&self, host: &str) -> Option<(String, u16)> {
+        if let Some(found) = self.owner(host) {
+            return Some(found);
+        }
+        let host = host.trim_end_matches('.').to_lowercase();
+        if host.parse::<IpAddr>().is_ok() || !self.has_learned_ips() {
+            return None;
+        }
+        let found = self.lookup_tailnet(&host).await?;
+        self.remember(&host, &found.0);
+        Some(found)
+    }
+
+    /// The one tailnet whose online devices `host` resolves to, if any. Every
+    /// Tailscale address it resolves to must belong to that same tailnet.
+    async fn lookup_tailnet(&self, host: &str) -> Option<(String, u16)> {
+        let addrs = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            tokio::net::lookup_host((host, 0)),
+        )
+        .await
+        .ok()?
+        .ok()?;
+        let learned = self.learned.read().ok()?;
+        let mut owners = BTreeSet::new();
+        for a in addrs {
+            let ip = a.ip();
+            if !is_tailscale_ip(&ip) {
+                continue;
+            }
+            match learned.ips.get(&ip) {
+                Some(o) => owners.extend(o.iter().cloned()),
+                None => return None,
+            }
+        }
+        self.only(&owners)
+    }
+
+    fn remember(&self, host: &str, profile: &str) {
+        let Ok(mut l) = self.learned.write() else {
+            return;
+        };
+        if l.hosts.get(host).map(String::as_str) == Some(profile) {
+            return;
+        }
+        l.hosts.insert(host.to_string(), profile.to_string());
+        tracing::info!(%host, %profile, "remembered: points at a device on this tailnet");
+        self.save_hosts(&l.hosts);
+    }
+
+    fn save_hosts(&self, hosts: &BTreeMap<String, String>) {
+        if let (Some(path), Ok(text)) = (&self.hosts_file, serde_json::to_string_pretty(hosts)) {
+            let _ = std::fs::write(path, text);
+        }
+    }
+
+    /// Re-check the remembered hosts: keep each only while it still resolves
+    /// to a device on the same tailnet. Called after every learning round.
+    pub async fn recheck_hosts(&self) {
+        let hosts: Vec<(String, String)> = match self.learned.read() {
+            Ok(l) => l.hosts.iter().map(|(h, p)| (h.clone(), p.clone())).collect(),
+            Err(_) => return,
+        };
+        let mut gone = Vec::new();
+        for (host, profile) in hosts {
+            if self.lookup_tailnet(&host).await.map(|f| f.0) != Some(profile) {
+                gone.push(host);
+            }
+        }
+        if gone.is_empty() {
+            return;
+        }
+        if let Ok(mut l) = self.learned.write() {
+            for h in &gone {
+                l.hosts.remove(h);
+                tracing::info!(host = %h, "forgotten: no longer points at that tailnet");
+            }
+            self.save_hosts(&l.hosts);
+        }
+    }
+
+    fn has_learned_ips(&self) -> bool {
+        self.learned.read().map(|l| !l.ips.is_empty()).unwrap_or(false)
+    }
+
+    /// The single profile in `owners` and its port, or None when it is empty
+    /// or ambiguous.
+    fn only(&self, owners: &BTreeSet<String>) -> Option<(String, u16)> {
+        if owners.len() != 1 {
+            return None;
+        }
+        let name = owners.iter().next()?;
+        self.ports.get(name).map(|p| (name.clone(), *p))
+    }
+
+    /// Replace what one tailnet serves: its devices' addresses and its DNS domains.
+    pub fn set_learned(&self, profile: &str, ips: &[IpAddr], domains: &[String]) {
+        let Ok(mut l) = self.learned.write() else {
+            return;
+        };
+        for set in l.ips.values_mut() {
+            set.remove(profile);
+        }
+        l.ips.retain(|_, s| !s.is_empty());
+        for set in l.domains.values_mut() {
+            set.remove(profile);
+        }
+        l.domains.retain(|_, s| !s.is_empty());
+        for ip in ips {
+            l.ips.entry(*ip).or_default().insert(profile.to_string());
+        }
+        for d in domains {
+            l.domains.entry(d.clone()).or_default().insert(profile.to_string());
+        }
+    }
+
+    /// For the PAC: learned domains and addresses that one tailnet alone
+    /// claims, and the remembered exact hosts.
+    pub fn pac_extras(&self) -> (Vec<String>, Vec<String>, Vec<String>) {
+        let Ok(l) = self.learned.read() else {
+            return (Vec::new(), Vec::new(), Vec::new());
+        };
+        let hosts = l.hosts.keys().cloned().collect();
+        let domains = l
+            .domains
+            .iter()
+            .filter(|(_, o)| o.len() == 1)
+            .map(|(d, _)| d.clone())
+            .collect();
+        let ips = l
+            .ips
+            .iter()
+            .filter(|(_, o)| o.len() == 1)
+            .map(|(ip, _)| ip.to_string())
+            .collect();
+        (domains, hosts, ips)
     }
 
     /// Upstream SOCKS5 port for a named profile (for tunnels).
     pub fn profile_port(&self, profile: &str) -> Option<u16> {
-        self.by_suffix
-            .values()
-            .find(|(name, _)| name == profile)
-            .map(|(_, port)| *port)
+        self.ports.get(profile).copied()
     }
 }
 
 pub struct Router {
     routes: Arc<RouteTable>,
-    pac_body: Arc<String>,
+    pac_suffixes: Vec<String>,
+    listen: String,
 }
 
 impl Router {
     pub fn new(cfg: &crate::config::Config, listen_addr: &str, routes: RouteTable) -> Self {
         Self {
             routes: Arc::new(routes),
-            pac_body: Arc::new(pac::generate(cfg, listen_addr)),
+            pac_suffixes: pac::config_suffixes(cfg),
+            listen: listen_addr.to_string(),
         }
     }
 
@@ -160,7 +381,7 @@ impl Router {
         };
         let dest_port = conn.read_u16().await?;
 
-        let Some((_, upstream_port)) = self.routes.owner(&host) else {
+        let Some((_, upstream_port)) = self.routes.resolve_owner(&host).await else {
             tracing::info!(%host, "refused: no profile owns hostname");
             let _ = conn
                 .write_all(&[0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
@@ -200,7 +421,11 @@ impl Router {
         let target = parts.next().unwrap_or("");
 
         if method == "GET" && target.starts_with("/tailfuse.pac") {
-            let body = self.pac_body.as_str().as_bytes().to_vec();
+            // Built per request, so browsers always get what the tailnets serve now.
+            let (domains, hosts, ips) = self.routes.pac_extras();
+            let mut suffixes = self.pac_suffixes.clone();
+            suffixes.extend(domains);
+            let body = pac::generate_from(&suffixes, &hosts, &ips, &self.listen).into_bytes();
             let head = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/x-ns-proxy-autoconfig\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
                 body.len()
@@ -219,7 +444,7 @@ impl Router {
             return Ok(());
         }
         let host = target.split(':').next().unwrap_or(target).to_string();
-        let Some((_, upstream_port)) = self.routes.owner(&host) else {
+        let Some((_, upstream_port)) = self.routes.resolve_owner(&host).await else {
             tracing::info!(%host, "refused: no profile owns hostname");
             let msg = format!("no tailfuse profile owns hostname {host}");
             let head = format!(
@@ -387,6 +612,8 @@ mod tests {
                 (".work.ts.net".into(), ("work".into(), work_port)),
                 (".home-lab.ts.net".into(), ("personal".into(), pers_port)),
             ]),
+            ports: BTreeMap::from([("work".into(), work_port), ("personal".into(), pers_port)]),
+            ..Default::default()
         };
         let router = Arc::new(Router::new(&cfg, "127.0.0.1:0", routes));
         let (tx, rx) = watch::channel(false);
@@ -462,5 +689,42 @@ mod tests {
         }
         assert!(text.contains("200 OK"), "got: {text}");
         assert!(text.contains("work.ts.net"), "got: {text}");
+    }
+
+    #[test]
+    fn learned_domains_and_addresses_route_only_when_unambiguous() {
+        let rt = RouteTable {
+            by_suffix: BTreeMap::from([(".work.ts.net".into(), ("work".into(), 1))]),
+            ports: BTreeMap::from([("work".into(), 1), ("ailio".into(), 2), ("change".into(), 3)]),
+            ..Default::default()
+        };
+        let ip: IpAddr = "100.74.194.18".parse().unwrap();
+        let shared: IpAddr = "100.70.0.9".parse().unwrap();
+        rt.set_learned("ailio", &[ip, shared], &["ailio.dev".into()]);
+        rt.set_learned("change", &[shared], &[]);
+        // Learned domain, and its subdomains.
+        assert_eq!(rt.owner("ailio.dev").map(|o| o.0), Some("ailio".into()));
+        assert_eq!(rt.owner("litellm.ailio.dev").map(|o| o.0), Some("ailio".into()));
+        assert!(rt.owner("notailio.dev").is_none());
+        // Configured suffixes still win.
+        assert_eq!(rt.owner("db.work.ts.net").map(|o| o.0), Some("work".into()));
+        // An address one tailnet has routes there; one two tailnets have is refused.
+        assert_eq!(rt.owner("100.74.194.18").map(|o| o.0), Some("ailio".into()));
+        assert!(rt.owner("100.70.0.9").is_none());
+        let (domains, _hosts, ips) = rt.pac_extras();
+        assert_eq!(domains, vec!["ailio.dev".to_string()]);
+        assert_eq!(ips, vec!["100.74.194.18".to_string()]);
+        // A new report replaces the old one.
+        rt.set_learned("ailio", &[], &[]);
+        assert!(rt.owner("ailio.dev").is_none());
+    }
+
+    #[test]
+    fn tailscale_ranges() {
+        assert!(is_tailscale_ip(&"100.64.0.1".parse().unwrap()));
+        assert!(is_tailscale_ip(&"100.127.255.254".parse().unwrap()));
+        assert!(!is_tailscale_ip(&"100.128.0.1".parse().unwrap()));
+        assert!(!is_tailscale_ip(&"104.21.71.112".parse().unwrap()));
+        assert!(is_tailscale_ip(&"fd7a:115c:a1e0::1".parse().unwrap()));
     }
 }

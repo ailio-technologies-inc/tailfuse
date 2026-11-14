@@ -30,6 +30,8 @@ const TRAY_REFRESH_MS: u64 = 3000;
 struct Running {
     daemons: daemon::DaemonSet,
     shutdown: watch::Sender<bool>,
+    /// The live routing table, including what the tailnets serve.
+    routes: Arc<router::RouteTable>,
 }
 
 struct AppState {
@@ -176,9 +178,25 @@ async fn start_inner(state: &AppState) -> Result<(), String> {
     let routes = router::RouteTable::build(&cfg, &socks_ports);
     let r = Arc::new(router::Router::new(&cfg, &cfg.router.listen, routes));
     let (shutdown, rx) = watch::channel(false);
-    if let Err(e) = r.clone().serve(&cfg.router.listen, rx).await {
+    if let Err(e) = r.clone().serve(&cfg.router.listen, rx.clone()).await {
         return Err(format!("router: {e:#}"));
     }
+    // Learn what each tailnet serves (split DNS, devices' addresses), so names
+    // like a custom domain pointed at a tailnet machine route with no setup.
+    // One round first, waiting up to 4 s for the tailnets to report, so the
+    // PAC the browsers fetch next already lists what they serve.
+    for _ in 0..8 {
+        let learned = daemons.learn().await;
+        let any = learned.iter().any(|(_, ips, d)| !ips.is_empty() || !d.is_empty());
+        for (name, ips, domains) in &learned {
+            r.routes().set_learned(name, ips, domains);
+        }
+        if any {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    daemon::spawn_learning(daemons.clone(), r.routes(), rx);
     // Best-effort system PAC; the window shows the manual URL regardless.
     let pac_url = format!("http://{}/tailfuse.pac", cfg.router.listen);
     *state.proxy_problem.lock().await = match sysproxy::apply(&pac_url) {
@@ -189,7 +207,7 @@ async fn start_inner(state: &AppState) -> Result<(), String> {
             format!("{e:#}")
         }
     };
-    *running = Some(Running { daemons, shutdown });
+    *running = Some(Running { daemons, shutdown, routes: r.routes() });
     Ok(())
 }
 
@@ -871,9 +889,15 @@ async fn activate_license(state: State<'_, SharedState>, key: String) -> Result<
 
 #[tauri::command]
 async fn test_host(state: State<'_, SharedState>, host: String) -> Result<String, String> {
-    let cfg = state.cfg.lock().await.clone();
-    Ok(match cfg.owner(&host) {
-        Some((name, _)) => format!("{host} → profile {name:?}"),
+    // While Tailfuse runs, ask the router itself: it also knows the domains
+    // and devices each tailnet serves. Otherwise only the configured suffixes.
+    let routes = state.running.lock().await.as_ref().map(|r| r.routes.clone());
+    let owner = match routes {
+        Some(routes) => routes.resolve_owner(&host).await.map(|(n, _)| n),
+        None => state.cfg.lock().await.owner(&host).map(|(n, _)| n.to_string()),
+    };
+    Ok(match owner {
+        Some(name) => format!("{host} → profile {name:?}"),
         None => format!("{host} → not owned (would be refused)"),
     })
 }
