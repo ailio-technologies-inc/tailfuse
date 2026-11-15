@@ -119,7 +119,10 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.30.5"
       - name: Engine (gomobile, arm64)
-        run: moon run mobile-engine:bind-android
+        # The moon task for this is left out of CI runs elsewhere, so the script is called directly.
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
+          bash engines/mobile/scripts/build-engine.sh android
         env:
           TF_ANDROID_ABIS: arm64
       - run: npm ci
