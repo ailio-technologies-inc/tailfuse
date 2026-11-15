@@ -2,7 +2,7 @@
 // otherwise. Every call parses {ok,result,error} and throws Error(error) on failure.
 import * as Native from "../modules/tailfuse-engine";
 import { mock } from "./mock";
-import type { Device, State, TestHostResult } from "./types";
+import type { DevicePage, State, SyncResult, TestHostResult } from "./types";
 
 export const usingMock = !Native.isAvailable;
 
@@ -34,8 +34,13 @@ export const removeProfile = (name: string) => run<null>("remove_profile", { nam
 export const testHost = (host: string) => run<TestHostResult>("test_host", { host });
 export const addTunnel = (t: { name: string; listen: string; target: string; profile: string }) => run<null>("add_tunnel", t);
 export const removeTunnel = (name: string) => run<null>("remove_tunnel", { name });
-export const devices = (name: string) => run<Device[]>("devices", { name });
+export type DevicesQuery = { name: string; query?: string; online?: boolean; limit?: number; offset?: number; refresh?: boolean };
+export const devices = (q: DevicesQuery) => run<DevicePage>("devices", q);
+export const importSetup = (link: string, dryRun = false) => run<SyncResult>("import_setup", { link, dry_run: dryRun });
+export const addDomain = (name: string, domain: string) => run<null>("add_domain", { name, domain });
+export const removeDomain = (name: string, domain: string) => run<null>("remove_domain", { name, domain });
 export const setUnlocked = (on: boolean) => run<null>("set_unlocked", { on });
+export const setAllApps = (on: boolean) => run<null>("set_all_apps", { on });
 export const start = () => backend.start();
 export const stop = () => backend.stop();
 export const getAlwaysOn = () => backend.getAlwaysOn();

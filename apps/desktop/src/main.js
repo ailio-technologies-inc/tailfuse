@@ -211,6 +211,11 @@ function render(s) {
     ? "Your tailnets are online, but your Mac isn't sending their addresses through Tailfuse yet. Allow Tailfuse to set the system proxy; macOS asks for your password once."
     : `${sentence(s.proxy_problem || "")} You can still set it by hand: see System proxy, under Settings.`;
   $("#pac-url").textContent = s.pac_url;
+  const hasTailnets = s.profiles.length > 0;
+  $("#phone-show").disabled = !hasTailnets;
+  $("#phone-text").textContent = hasTailnets
+    ? "Show a code to scan with Tailfuse on your iPhone or Android phone. It brings your tailnets across; you sign in to each one on the phone."
+    : "Add a tailnet first.";
 
   // The official Tailscale app: shown on the tailnet it shares with Tailfuse; a separate
   // notice only when it is on a tailnet Tailfuse doesn't have.
@@ -242,6 +247,28 @@ function render(s) {
   select.replaceChildren(...s.profiles.map((p) => h("option", null, p.name)));
   if (s.profiles.some((p) => p.name === chosen)) select.value = chosen;
   $("#show-add-tunnel").disabled = count === 0;
+}
+
+// The code the phone scans. The SVG comes from our own Rust, but it is still parsed and checked
+// (only an <svg> root is taken, nothing is concatenated into markup); the text around it is set
+// with textContent, so a tailnet's name never reaches innerHTML.
+let phoneLink = "";
+async function showPhoneCode() {
+  const r = await invoke("phone_sync");
+  const doc = new DOMParser().parseFromString(r.svg, "image/svg+xml");
+  const svg = doc.documentElement;
+  if (svg.localName !== "svg" || doc.querySelector("parsererror")) throw new Error("The code could not be drawn.");
+  svg.querySelectorAll("script, foreignObject").forEach((n) => n.remove());
+  $("#phone-qr").replaceChildren(document.importNode(svg, true));
+  phoneLink = r.link;
+  let line = plural(r.profiles, "tailnet");
+  if (r.tunnels) line += ` and ${plural(r.tunnels, "local port")}`;
+  line += ". No passwords or keys are in this code.";
+  if (r.tunnels_dropped) line += " Your local ports were left out: there are too many for one code.";
+  $("#phone-carries").textContent = line;
+  $("#phone-copy").textContent = "Copy link";
+  const dialog = $("#phone");
+  if (!dialog.open) dialog.showModal();
 }
 
 // The system proxy needs an administrator. Explain first in the window; only after OK does
@@ -366,6 +393,25 @@ if (!invoke) {
       const name = rest.join(":");
       await call(kind === "profile" ? "remove_profile" : "remove_tunnel", { name }).catch(() => {});
       return refresh();
+    }
+
+    if (target.id === "phone-show") {
+      target.disabled = true;
+      try {
+        await showPhoneCode();
+      } catch (err) {
+        $("#phone-text").textContent = friendly(err)[1];
+      }
+      target.disabled = !lastState?.profiles.length;
+      return;
+    }
+
+    if (target.id === "phone-copy") {
+      navigator.clipboard.writeText(phoneLink).then(() => {
+        target.textContent = "Copied";
+        setTimeout(() => (target.textContent = "Copy link"), 1500);
+      }, () => {});
+      return;
     }
 
     if (target.id === "mcp-copy") {

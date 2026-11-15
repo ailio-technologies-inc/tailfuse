@@ -10,6 +10,7 @@ pub mod daemon;
 pub mod license;
 pub mod pac;
 pub mod router;
+pub mod sync;
 pub mod sysproxy;
 pub mod tunnels;
 

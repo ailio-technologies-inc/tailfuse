@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ailio.tailfuse",
+      "appleTeamId": "N7TM93NL4Q",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -41,6 +42,14 @@
       "expo-font",
       "expo-web-browser",
       "expo-iap",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Tailfuse uses the camera to scan the setup code shown on your computer.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-splash-screen",
         {

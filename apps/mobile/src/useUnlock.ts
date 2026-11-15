@@ -31,30 +31,42 @@ export function useUnlock(refresh: () => Promise<unknown>) {
     };
   }, [sync]);
 
-  const unlock = useCallback(async () => {
+  // Both resolve true when the unlock is now held, so a caller can carry on with what it was doing.
+  const unlock = useCallback(async (): Promise<boolean> => {
     setBusy("purchase");
     setNote("");
+    let ok = false;
     try {
       const outcome = await store.purchase();
       if (outcome === "pending") setNote("Waiting for approval. Tailfuse unlocks as soon as the store confirms it.");
-      if (outcome === "purchased") await sync();
+      if (outcome === "purchased") {
+        await sync();
+        ok = true;
+      }
     } catch (err) {
       setNote(storeErrorText(err));
     }
     setBusy(null);
+    return ok;
   }, [sync]);
 
-  const restore = useCallback(async () => {
+  const restore = useCallback(async (): Promise<boolean> => {
     setBusy("restore");
     setNote("");
+    let ok = false;
     try {
-      if (await store.restore()) await sync();
-      else setNote(`No earlier purchase was found on this ${accountWord()}.`);
+      if (await store.restore()) {
+        await sync();
+        ok = true;
+      } else setNote(`No earlier purchase was found on this ${accountWord()}.`);
     } catch (err) {
       setNote(storeErrorText(err));
     }
     setBusy(null);
+    return ok;
   }, [sync]);
 
-  return { price, busy, note, unlock, restore };
+  const clearNote = useCallback(() => setNote(""), []);
+
+  return { price, busy, note, unlock, restore, clearNote };
 }

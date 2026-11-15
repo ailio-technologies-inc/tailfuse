@@ -10,6 +10,8 @@ import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.ProxyInfo
 import android.net.VpnService
 import android.os.Build
@@ -23,8 +25,10 @@ import android.system.OsConstants
 import android.system.StructPollfd
 import android.util.Log
 import androidx.core.content.ContextCompat
+import org.json.JSONArray
 import org.json.JSONObject
 import tfmobile.Listener
+import tfmobile.Protector
 import tfmobile.Tfmobile
 import java.io.File
 import java.net.NetworkInterface
@@ -35,12 +39,20 @@ import java.util.concurrent.RejectedExecutionException
 import kotlin.concurrent.thread
 
 /**
- * Keeps the Go engine alive and gives the phone a VPN that claims no routes.
+ * Keeps the Go engine alive and gives the phone a VPN, in one of two modes chosen by the engine's
+ * state (engines/mobile/API.md, "All-apps mode"):
  *
- * Nothing is routed into the tunnel, so the engine's own traffic cannot loop back into it. The VPN
- * exists for three reasons: Android keeps the process alive while a VPN service runs, the VPN network
- * can carry a system HTTP proxy (API 29+) that points apps at the engine's local router, and the
- * person gets the system's "VPN is on" key icon. See engines/mobile/API.md ("Where it runs").
+ * - all apps (the default): the VPN claims Tailfuse's own 198.18.0.0/15 and ULA ranges and
+ *   Tailscale's ranges, its DNS server is the engine's responder, and the engine reads the tun fd
+ *   (detachFd) itself. Every app reaches every tailnet; no system proxy, no passthrough. Names no
+ *   tailnet owns are forwarded to the underlying network's DNS servers, pushed on every change.
+ * - proxy: a VPN that claims no routes, with a system HTTP proxy (API 29+) pointing apps at the
+ *   engine's local router, and passthrough on.
+ *
+ * Either way Android keeps the process alive while a VPN service runs and shows the key icon. A mode
+ * change (`set_all_apps`, or the engine falling back when the packets cannot start) arrives as a
+ * "domains" event and re-establishes the VPN with the other settings. The engine's own sockets are
+ * protected from the VPN ([protector]).
  *
  * The engine calls (Start/Stop) are slow, so everything that touches it runs on [worker].
  */
@@ -95,6 +107,14 @@ class TailfuseVpnService : VpnService() {
   private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "tailfuse-vpn").apply { isDaemon = true } }
   private val main = Handler(Looper.getMainLooper())
   @Volatile private var tunnel: ParcelFileDescriptor? = null
+  /** The mode the current tunnel was established in; null before the first. Worker thread only. */
+  private var allAppsApplied: Boolean? = null
+  private var dnsCallbackRegistered = false
+
+  /** VpnService.protect for the engine's sockets (WireGuard, DERP, control, upstream DNS). */
+  private val protector = object : Protector {
+    override fun protect(fd: Long): Boolean = this@TailfuseVpnService.protect(fd.toInt())
+  }
   @Volatile private var shuttingDown = false
   @Volatile private var bringUpScheduled = false
   private var callbackRegistered = false
@@ -102,8 +122,10 @@ class TailfuseVpnService : VpnService() {
   private val engineListener = object : Listener {
     override fun onChange(kind: String?) {
       val k = kind ?: "state"
-      // "domains" needs no work here: the proxy is a fixed host:port, not a list of names.
       if (k == "state") onWorker { refreshNotification() }
+      // "domains": the owned names or the mode changed. The names need no work in either mode (the
+      // proxy is a fixed host:port; the DNS server answers whatever it owns), the mode does.
+      if (k == "domains") onWorker { if (!shuttingDown && tunnel != null && wantAllApps() != allAppsApplied) establishOrStop() }
       sink?.invoke(k)
     }
   }
@@ -112,6 +134,14 @@ class TailfuseVpnService : VpnService() {
     override fun onAvailable(network: Network) = pushInterfaces()
     override fun onLost(network: Network) = pushInterfaces()
     override fun onLinkPropertiesChanged(network: Network, linkProperties: android.net.LinkProperties) = pushInterfaces()
+  }
+
+  // The non-VPN networks, for their DNS servers. This app is inside its own VPN, so its default
+  // network is the VPN itself, whose DNS server is the engine.
+  private val dnsCallback = object : ConnectivityManager.NetworkCallback() {
+    override fun onAvailable(network: Network) = pushDnsServers()
+    override fun onLost(network: Network) = pushDnsServers()
+    override fun onLinkPropertiesChanged(network: Network, linkProperties: android.net.LinkProperties) = pushDnsServers()
   }
 
   override fun onCreate() {
@@ -183,16 +213,15 @@ class TailfuseVpnService : VpnService() {
       Tfmobile.setDeviceName(deviceName())
       Tfmobile.setInterfaces(interfacesAsString())
       Tfmobile.setListener(engineListener)
-      // Every app's web traffic reaches the router through the system proxy (no PAC over a VPN):
-      // let names no tailnet owns pass through directly. Android only; iOS never sets this.
+      Tfmobile.setProtector(protector)
+      // Proxy mode: every app's web traffic reaches the router through the system proxy (no PAC over
+      // a VPN), so names no tailnet owns pass through directly. The engine holds this off by itself
+      // while all-apps packets run. Android only; iOS never sets this.
       Tfmobile.setPassthrough(true)
       Tfmobile.start(stateDir(this))
       registerNetworkCallback()
-      if (!establishTunnel()) {
-        Log.e(TAG, "establish() returned null: VPN permission missing or revoked")
-        shutdown()
-        return
-      }
+      pushDnsServers()
+      if (!establishOrStop()) return
       refreshNotification()
       sink?.invoke("state")
     } catch (e: Exception) {
@@ -223,8 +252,17 @@ class TailfuseVpnService : VpnService() {
       }
       callbackRegistered = false
     }
+    if (dnsCallbackRegistered) {
+      try {
+        getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(dnsCallback)
+      } catch (_: IllegalArgumentException) {
+      }
+      dnsCallbackRegistered = false
+    }
     val t = tunnel
     tunnel = null
+    allAppsApplied = null
+    Tfmobile.stopPackets() // closes an all-apps fd (the engine owns it after detachFd)
     try {
       t?.close()
     } catch (_: Exception) {
@@ -233,7 +271,80 @@ class TailfuseVpnService : VpnService() {
     Tfmobile.stop()
   }
 
+  /** (Re-)establishes the VPN for the engine's current mode; shuts down when that is impossible. */
+  private fun establishOrStop(): Boolean {
+    if (establishTunnel()) return true
+    Log.e(TAG, "establish() returned null: VPN permission missing or revoked")
+    shutdown()
+    return false
+  }
+
+  /** The engine's state, or null when unreadable. */
+  private fun engineState(): JSONObject? = try {
+    JSONObject(Tfmobile.call("""{"cmd":"state"}""")).getJSONObject("result")
+  } catch (_: Exception) {
+    null
+  }
+
+  /** All-apps settings: the saved setting is on and nothing made this session fall back. */
+  private fun wantAllApps(state: JSONObject? = engineState()): Boolean =
+    state != null && state.optBoolean("all_apps") && state.optString("all_apps_error").isEmpty()
+
   private fun establishTunnel(): Boolean {
+    val state = engineState()
+    return if (wantAllApps(state)) establishAllApps(state!!) else establishProxy()
+  }
+
+  private fun cidr(text: String): Pair<String, Int>? {
+    val i = text.lastIndexOf('/')
+    if (i <= 0) return null
+    val bits = text.substring(i + 1).toIntOrNull() ?: return null
+    return text.substring(0, i) to bits
+  }
+
+  private fun strings(array: JSONArray?): List<String> =
+    if (array == null) emptyList() else (0 until array.length()).map { array.optString(it) }.filter { it.isNotEmpty() }
+
+  /** All-apps mode: routes, addresses and the DNS server from state.tunnel; the engine reads the fd. */
+  private fun establishAllApps(state: JSONObject): Boolean {
+    val t = state.optJSONObject("tunnel") ?: JSONObject()
+    val builder = Builder().setSession("Tailfuse").setMtu(t.optInt("mtu", 1280).coerceAtLeast(1280))
+    try {
+      for (a in strings(t.optJSONArray("addresses")).mapNotNull(::cidr)) builder.addAddress(a.first, a.second)
+      for (r in strings(t.optJSONArray("routes")).mapNotNull(::cidr)) builder.addRoute(r.first, r.second)
+      for (d in strings(t.optJSONArray("dns"))) builder.addDnsServer(d)
+    } catch (e: IllegalArgumentException) {
+      Log.e(TAG, "bad all-apps tunnel settings; using proxy mode", e)
+      return establishProxy()
+    }
+    // No setHttpProxy and no passthrough: every app reaches the tailnets through the routes. No
+    // allowFamily: the VPN has IPv6 addresses and routes of its own, and other IPv6 traffic is not
+    // routed into it. Not calling addDisallowedApplication(packageName): the app's own WebView should
+    // reach tailnets too, and the engine's sockets are protected instead.
+    configureIntent(builder)
+    if (Build.VERSION.SDK_INT >= 29) builder.setMetered(false)
+    val fresh = builder.establish() ?: return false
+    val old = tunnel
+    tunnel = fresh
+    allAppsApplied = true
+    try {
+      // The engine gets its own duplicate and owns it (it closes it, and the previous one it had).
+      // This service keeps `fresh`, so the interface is closed by us on every path, including when
+      // startPackets fails before the engine took the fd (detachFd would leak it then).
+      Tfmobile.startPackets(fresh.dup().detachFd().toLong(), false)
+    } catch (e: Exception) {
+      // The engine now reports all_apps_error and fires "domains", which re-establishes in proxy mode.
+      Log.e(TAG, "packets did not start; falling back to proxy mode", e)
+    }
+    try {
+      old?.close()
+    } catch (_: Exception) {
+    }
+    return true
+  }
+
+  /** Proxy mode, exactly as before all-apps mode existed. */
+  private fun establishProxy(): Boolean {
     val (proxyHost, proxyPort) = proxyHostPort()
     val builder = Builder()
       .setSession("Tailfuse")
@@ -246,13 +357,8 @@ class TailfuseVpnService : VpnService() {
     // Not calling addDisallowedApplication(packageName): the engine's Go sockets already use the
     // underlying network (the tunnel has no routes, and Go ignores the system HTTP proxy), so it
     // would gain nothing, and it would take this app off the VPN network, so the app's own
-    // WebView/fetch would lose the proxy and could not open tailnet names. Revisit only if a device
-    // shows the engine's sockets on the VPN network.
-    packageManager.getLaunchIntentForPackage(packageName)?.let {
-      builder.setConfigureIntent(
-        PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-      )
-    }
+    // WebView/fetch would lose the proxy and could not open tailnet names.
+    configureIntent(builder)
     if (Build.VERSION.SDK_INT >= 29) {
       builder.setMetered(false) // inherit meteredness from the real network
       if (APPLY_SYSTEM_PROXY) builder.setHttpProxy(ProxyInfo.buildDirectProxy(proxyHost, proxyPort))
@@ -260,12 +366,22 @@ class TailfuseVpnService : VpnService() {
     val fresh = builder.establish() ?: return false
     val old = tunnel
     tunnel = fresh
+    allAppsApplied = false
+    Tfmobile.stopPackets() // leaving all-apps mode: the engine closes its fd
     drain(fresh)
     try {
       old?.close()
     } catch (_: Exception) {
     }
     return true
+  }
+
+  private fun configureIntent(builder: Builder) {
+    packageManager.getLaunchIntentForPackage(packageName)?.let {
+      builder.setConfigureIntent(
+        PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+      )
+    }
   }
 
   // Reads and drops whatever is written to the tun so it can never fill up and block. The fd is
@@ -317,9 +433,42 @@ class TailfuseVpnService : VpnService() {
   }
 
   private fun registerNetworkCallback() {
-    if (callbackRegistered) return
-    getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
-    callbackRegistered = true
+    val cm = getSystemService(ConnectivityManager::class.java)
+    if (!callbackRegistered) {
+      cm.registerDefaultNetworkCallback(networkCallback)
+      callbackRegistered = true
+    }
+    if (!dnsCallbackRegistered) {
+      val request = NetworkRequest.Builder()
+        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+        .build()
+      cm.registerNetworkCallback(request, dnsCallback)
+      dnsCallbackRegistered = true
+    }
+  }
+
+  /**
+   * Gives the engine the DNS servers of the networks outside the VPN, the active underlying one
+   * first. All-apps mode forwards names no tailnet owns there (the VPN's DNS server gets every query).
+   */
+  private fun pushDnsServers() {
+    try {
+      val cm = getSystemService(ConnectivityManager::class.java)
+      val servers = LinkedHashSet<String>()
+      @Suppress("DEPRECATION")
+      val networks = cm.allNetworks.filter {
+        val caps = cm.getNetworkCapabilities(it)
+        caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+          caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+      }.sortedByDescending { cm.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true }
+      for (n in networks) {
+        cm.getLinkProperties(n)?.dnsServers?.forEach { addr -> addr.hostAddress?.let { servers.add(it.substringBefore('%')) } }
+      }
+      Tfmobile.setDNSServers(servers.joinToString("\n"))
+    } catch (e: Exception) {
+      Log.w(TAG, "setDNSServers failed", e)
+    }
   }
 
   private fun pushInterfaces() {

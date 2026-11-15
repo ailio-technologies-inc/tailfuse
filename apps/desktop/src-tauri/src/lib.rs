@@ -15,7 +15,7 @@ mod updates;
 
 use std::sync::Arc;
 use tailfuse_core::config::{self, Config, Profile, Tunnel};
-use tailfuse_core::{daemon, license, router, sysproxy};
+use tailfuse_core::{daemon, license, router, sync, sysproxy};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -83,6 +83,30 @@ struct TailscaleAppView {
     account: String,
     /// The Tailfuse tailnet that is the same network, if there is one.
     same_as: String,
+}
+
+#[derive(Serialize)]
+struct PhoneSync {
+    svg: String,
+    link: String,
+    profiles: usize,
+    tunnels: usize,
+    tunnels_dropped: bool,
+}
+
+/// The code the phone app scans to set up the same tailnets: setup only, never keys.
+#[tauri::command]
+async fn phone_sync(state: State<'_, SharedState>) -> Result<PhoneSync, String> {
+    let cfg = state.cfg.lock().await.clone();
+    let out = sync::link(&cfg, &sync::computer_name()).map_err(|e| format!("{e:#}"))?;
+    let svg = sync::qr_svg(&out.link).map_err(|e| format!("{e:#}"))?;
+    Ok(PhoneSync {
+        svg,
+        link: out.link,
+        profiles: out.profiles,
+        tunnels: out.tunnels,
+        tunnels_dropped: out.tunnels_dropped,
+    })
 }
 
 #[tauri::command]
@@ -1445,6 +1469,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_state,
+            phone_sync,
             start,
             stop,
             login,

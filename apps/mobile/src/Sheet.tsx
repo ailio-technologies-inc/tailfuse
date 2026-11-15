@@ -1,125 +1,96 @@
-// The one bottom sheet every secondary thing uses. Hand-rolled (Animated + PanResponder): slides up
-// over a backdrop, closes by drag-down, backdrop tap, the close button or Android's back button,
-// falls back to a fade with reduce-motion, and keeps accessibility inside while it is open.
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+// The one bottom sheet every secondary thing uses, now the platform's own (UISheetPresentationController on
+// iOS, a Material bottom sheet on Android) through @lodev09/react-native-true-sheet: native grabber, corners,
+// dimming, detents, swipe to dismiss and keyboard handling. Sheet.web.tsx is the browser preview's stand-in.
+import { TrueSheet } from "@lodev09/react-native-true-sheet";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { ScrollView, View } from "react-native";
 
-import { CloseIcon, IconButton, T, useReduceMotion } from "./components";
-import { MAX_W, colors, radius } from "./theme";
+import { CloseIcon, IconButton, T } from "./components";
+import { colors } from "./theme";
+
+// A ref to the list component (any scrollable); typed loosely because the sheet only passes it on.
+type ListRef = RefObject<any>;
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   title?: string;
   subtitle?: ReactNode;
-  /** Up to 90% of the screen instead of 85%. */
+  /** Medium and large detents (long or growing content); otherwise the sheet fits its content. */
   tall?: boolean;
-  /** Content that should not scroll with the rest, pinned under the header. */
-  children: ReactNode;
+  fit?: boolean;
+  /**
+   * A virtualised list that is the sheet's one scroller (instead of wrapping children in a ScrollView): the
+   * sheet wires the list's native scroll view for nested scrolling, so dragging the list scrolls it and
+   * dragging at its top moves the sheet. Never nest it in another vertical ScrollView.
+   */
+  list?: (ref: ListRef) => ReactNode;
+  children?: ReactNode;
 };
 
-const native = Platform.OS !== "web";
-
-export function Sheet({ visible, onClose, title, subtitle, tall, children }: Props) {
-  const insets = useSafeAreaInsets();
-  const { height: screenH } = useWindowDimensions();
-  const reduce = useReduceMotion();
-  const [mounted, setMounted] = useState(visible);
-  if (visible && !mounted) setMounted(true); // mount in the same render the sheet is asked for
-  const [progress] = useState(() => new Animated.Value(visible ? 1 : 0));
-  const [drag] = useState(() => new Animated.Value(0));
+export function Sheet({ visible, onClose, title, subtitle, tall, list, children }: Props) {
+  const sheet = useRef<TrueSheet>(null);
+  const scroll = useRef<any>(null);
+  const shown = useRef(false);
+  const want = useRef(visible);
   const closeRef = useRef(onClose);
   useEffect(() => {
     closeRef.current = onClose;
-  }, [onClose]);
+    want.current = visible;
+  });
 
   useEffect(() => {
-    if (visible) {
-      drag.setValue(0);
-      Animated.timing(progress, { toValue: 1, duration: reduce ? 120 : 260, useNativeDriver: native }).start();
-    } else {
-      Animated.timing(progress, { toValue: 0, duration: reduce ? 100 : 200, useNativeDriver: native }).start(({ finished }) => {
-        if (finished) setMounted(false);
+    if (visible && !shown.current) {
+      shown.current = true;
+      sheet.current?.present().catch(() => {
+        shown.current = false;
       });
+    } else if (!visible && shown.current) {
+      shown.current = false;
+      sheet.current?.dismiss().catch(() => {});
     }
-  }, [visible, reduce, progress, drag]);
-
-  // eslint-disable-next-line react-hooks/refs -- closeRef is only read in the gesture callback, never during render
-  const [pan] = useState(() =>
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => g.dy > 4 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_e, g) => drag.setValue(Math.max(0, g.dy)),
-      onPanResponderRelease: (_e, g) => {
-        if (g.dy > 90 || g.vy > 0.9) closeRef.current();
-        else Animated.spring(drag, { toValue: 0, useNativeDriver: native, bounciness: 0 }).start();
-      },
-      onPanResponderTerminate: () => Animated.spring(drag, { toValue: 0, useNativeDriver: native }).start(),
-    }),
-  );
-
-  if (!mounted) return null;
-
-  const maxH = (screenH - insets.top - 8) * (tall ? 0.9 : 0.85);
-  const slide = progress.interpolate({ inputRange: [0, 1], outputRange: [reduce ? 0 : maxH, 0] });
-  const translateY = Animated.add(slide, drag);
+  }, [visible]);
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent supportedOrientations={["portrait"]}>
-      <View style={styles.root} accessibilityViewIsModal>
-        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.backdrop, opacity: progress }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
-        </Animated.View>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ maxHeight: screenH - insets.top, width: "100%", alignItems: "center" }} pointerEvents="box-none">
-          <Animated.View
-            accessibilityLabel={title}
-            style={[styles.sheet, { maxHeight: maxH, opacity: reduce ? progress : 1, transform: [{ translateY }] }]}
-          >
-            <View {...pan.panHandlers}>
-              <View style={styles.handleZone}>
-                <View style={styles.handle} />
-              </View>
-              <View style={styles.header}>
-                <View style={{ flex: 1, minWidth: 0, gap: 2, paddingVertical: 6 }}>
-                  {title ? <T v="h2" accessibilityRole="header" style={{ fontSize: 19, lineHeight: 24, letterSpacing: -0.3 }}>{title}</T> : null}
-                  {subtitle}
-                </View>
-                <IconButton onPress={onClose} label="Close">
-                  <CloseIcon size={20} color={colors.ink} />
-                </IconButton>
-              </View>
-            </View>
-            <ScrollView
-              style={{ flexShrink: 1 }}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20 + insets.bottom, gap: 16 }}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              showsVerticalScrollIndicator={false}
-            >
-              {children}
-            </ScrollView>
-          </Animated.View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+    <TrueSheet
+      ref={sheet}
+      name={title}
+      detents={tall ? [0.6, 1] : ["auto"]}
+      backgroundColor={colors.card}
+      grabber
+      scrollableRef={scroll}
+      onDidDismiss={() => {
+        const wasShown = shown.current;
+        shown.current = false;
+        // A swipe or a tap outside closes it natively: tell the screen. A close it asked for needs no word.
+        if (wasShown || want.current) closeRef.current();
+      }}
+      header={
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, paddingLeft: 20, paddingRight: 8, paddingTop: 18 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 2, paddingVertical: 6 }}>
+            {title ? <T v="h2" accessibilityRole="header" style={{ fontSize: 19, lineHeight: 24, letterSpacing: -0.3 }}>{title}</T> : null}
+            {subtitle}
+          </View>
+          <IconButton onPress={() => sheet.current?.dismiss().catch(() => {})} label="Close">
+            <CloseIcon size={18} color={colors.ink} />
+          </IconButton>
+        </View>
+      }
+    >
+      {list ? (
+        <View style={{ flex: 1 }}>{list(scroll)}</View>
+      ) : (
+      <ScrollView
+        ref={scroll}
+        nestedScrollEnabled
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 28, gap: 16 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        showsVerticalScrollIndicator={false}
+      >
+        {children}
+      </ScrollView>
+      )}
+    </TrueSheet>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, justifyContent: "flex-end" },
-  sheet: {
-    width: "100%",
-    maxWidth: MAX_W,
-    backgroundColor: colors.card,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: colors.lineStrong,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    overflow: "hidden",
-  },
-  handleZone: { height: 22, alignItems: "center", justifyContent: "flex-end", paddingBottom: 4 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.lineStrong },
-  header: { flexDirection: "row", alignItems: "flex-start", gap: 8, paddingLeft: 20, paddingRight: 8 },
-});

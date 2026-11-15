@@ -1,7 +1,7 @@
 import Constants from "expo-constants";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Linking, View } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
 
 import { Button, Card, LinkButton, Pane, Switch, T } from "./components";
 import * as engine from "./engine";
@@ -19,10 +19,23 @@ function Row({ title, sub, children }: { title: ReactNode; sub?: string; childre
   );
 }
 
-const Divider = () => <View style={{ height: 1, backgroundColor: colors.line }} />;
+const Divider = () => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.lineStrong, marginLeft: 16 }} />;
 
-export function SettingsSection({ proxy, onError }: { proxy: string; onError: (e: unknown) => void }) {
+type SettingsProps = {
+  proxy: string;
+  /** state.all_apps; undefined before the first state. */
+  allApps?: boolean;
+  allAppsError?: string;
+  onError: (e: unknown) => void;
+  onSync: () => void;
+  onChanged: () => void;
+};
+
+export function SettingsSection({ proxy, allApps, allAppsError, onError, onSync, onChanged }: SettingsProps) {
   const [alwaysOn, setAlwaysOn] = useState(false);
+  // The switch follows the tap at once, until the engine's state (allApps) catches up.
+  const [pending, setPending] = useState<{ next: boolean; was: boolean | undefined } | null>(null);
+  const allAppsOn = pending && pending.was === allApps ? pending.next : (allApps ?? true);
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -41,6 +54,16 @@ export function SettingsSection({ proxy, onError }: { proxy: string; onError: (e
       onError(err);
     }
   };
+  const toggleAllApps = async (next: boolean) => {
+    setPending({ next, was: allApps });
+    try {
+      await engine.setAllApps(next);
+      onChanged();
+    } catch (err) {
+      setPending(null);
+      onError(err);
+    }
+  };
   const copy = async () => {
     try {
       await Clipboard.setStringAsync(proxy);
@@ -55,9 +78,27 @@ export function SettingsSection({ proxy, onError }: { proxy: string; onError: (e
   return (
     <Pane title="Settings">
       <Card>
-        <Row title="Keep Tailfuse on" sub="Reconnects on its own after a restart or a network change.">
-          <Switch small value={alwaysOn} onValueChange={toggle} label="Keep Tailfuse on" />
+        <Row title="Sync from your computer" sub="Scan the code Tailfuse shows on your Mac or PC to bring your tailnets across.">
+          <Button title="Scan" label="Scan a code from your computer" onPress={onSync} />
         </Row>
+        <Divider />
+        <Row title="Keep Tailfuse on" sub="Reconnects on its own after a restart or a network change.">
+          <Switch value={alwaysOn} onValueChange={toggle} label="Keep Tailfuse on" />
+        </Row>
+        <Divider />
+        <Row
+          title="All apps"
+          sub={allAppsOn ? "Every app reaches your tailnets, by name and by address." : "Only apps that follow the system proxy, such as browsers."}
+        >
+          <Switch value={allAppsOn} onValueChange={toggleAllApps} label="All apps" />
+        </Row>
+        {allAppsOn && allAppsError ? (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 12, marginTop: -4 }}>
+            <T v="label" color={colors.muted}>
+              Not available right now, so only browsers reach your tailnets until Tailfuse restarts ({allAppsError}).
+            </T>
+          </View>
+        ) : null}
         <Divider />
         <Row title="Proxy address" sub="For an app that ignores the system setting, give it this address.">
           <Button title={copied ? "Copied" : "Copy address"} label="Copy the proxy address" onPress={copy} disabled={!proxy} />
@@ -67,7 +108,7 @@ export function SettingsSection({ proxy, onError }: { proxy: string; onError: (e
             <T
               v="mono"
               selectable
-              style={{ backgroundColor: colors.deep, borderWidth: 1, borderColor: colors.line, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 2, fontFamily: fonts.mono }}
+              style={{ backgroundColor: colors.deep, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 2, fontFamily: fonts.mono }}
             >
               {proxy}
             </T>

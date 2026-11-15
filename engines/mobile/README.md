@@ -13,6 +13,8 @@ contract with the native shells and the Expo app is [API.md](API.md).
 | `engine.go` | nodes, sign-in, the `Call` commands, change events |
 | `tsnode.go` | the only file that touches tsnet (`Node` interface; tests use fakes) |
 | `interfaces.go` | Android: feeds `SetInterfaces` text to Tailscale's netmon |
+| `allapps.go` | all-apps mode: nodes get a tun link, the DNS and rules adapters, packets start/stop and fallback |
+| `packets/` | the all-apps packet path: translation into each node's WireGuard, synthetic addresses, the DNS responder ([DESIGN.md](packets/DESIGN.md)) |
 | `tfmobile/` | the gomobile surface |
 | `cmd/tfdev/` | a harness for a computer |
 | `testdata/routing.json` | routing vectors from the desktop core's tests, to compare the two cores |
@@ -25,6 +27,10 @@ gofmt -l . && go vet ./... && go test -race ./...
 ```
 
 The tests run everything over real loopback sockets with fake nodes; nothing talks to Tailscale.
+All-apps mode (the default on phones; tfdev runs proxy mode only) is also tested against real
+nodes on Tailscale's test control server, in a temporary copy of the module so its test-only
+dependencies stay out of `go.mod`: `sh packets/testdata/integration/run.sh`. Memory harness:
+`PACKETS_MEM=1 go test -run Memory -v ./packets/`.
 
 ## Run tfdev
 

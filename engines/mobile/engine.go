@@ -7,16 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/ailio-technologies-inc/tailfuse/engines/mobile/packets"
+	"github.com/tailscale/wireguard-go/tun"
 )
 
 // Version is the engine version reported in State.
@@ -38,6 +45,14 @@ type Options struct {
 	LearnFirst     time.Duration // first learning round after Start; 3s
 	PendingTimeout time.Duration // unfinished sign-in removed after; 10m
 	Now            func() time.Time
+
+	// Packets: the shell can hand over the tun, so all-apps mode applies
+	// (allapps.go). tfmobile sets it; tfdev and the desktop-parity tests
+	// leave it off and run proxy mode only.
+	Packets bool
+	// ForwardDNS: names no tailnet owns are forwarded to SetDNSServers'
+	// resolvers (always on Android; tests).
+	ForwardDNS bool
 }
 
 // Engine runs one node per tailnet and the router. Every method is safe for
@@ -49,19 +64,25 @@ type Engine struct {
 	opMu sync.Mutex
 
 	// mu guards the fields below, for quick reads (state, dialing).
-	mu       sync.RWMutex
-	stateDir string
-	cfg      *Config
-	up       bool
-	stopping bool
-	routes   *RouteTable
-	router   *Router
-	tunnels  *tunnelSet
-	nodes    map[string]*nodeEntry
-	logsMode bool
-	device   string // hostname from SetDeviceName, "" when not given
+	mu        sync.RWMutex
+	stateDir  string
+	cfg       *Config
+	up        bool
+	stopping  bool
+	routes    *RouteTable
+	router    *Router
+	tunnels   *tunnelSet
+	nodes     map[string]*nodeEntry
+	devMu     sync.Mutex // guards devCaches; held while fetching
+	devCaches map[string]*devCache
+	logsMode  bool
+	device    string // hostname from SetDeviceName, "" when not given
 
 	passthrough atomic.Bool // SetPassthrough (Android)
+	aa          allApps     // all-apps mode; guarded by mu
+	resolvers   *packets.Resolvers
+	dnsMu       sync.Mutex
+	dnsList     []netip.AddrPort
 	stopCh      chan struct{}
 	loops       sync.WaitGroup
 
@@ -77,6 +98,7 @@ type Engine struct {
 
 type nodeEntry struct {
 	node   Node
+	tun    tun.Device // all-apps mode: the node's link in the Mux
 	status NodeStatus
 	err    string
 }
@@ -107,7 +129,8 @@ func New(opts Options) *Engine {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Engine{opts: opts, stateDir: opts.StateDir, cfg: NewConfig(), nodes: map[string]*nodeEntry{}, pendKinds: map[string]bool{}}
+	return &Engine{opts: opts, stateDir: opts.StateDir, cfg: NewConfig(), nodes: map[string]*nodeEntry{}, pendKinds: map[string]bool{},
+		resolvers: &packets.Resolvers{}}
 }
 
 // SetStateDir sets where the config lives while the engine is off.
@@ -134,14 +157,10 @@ func (e *Engine) SetDeviceName(name string) {
 
 // SetPassthrough switches passthrough on or off (Android only; see
 // passthrough.go). It may be called before Start and takes effect at once.
+// While all-apps packets run it is held off (no system proxy then).
 func (e *Engine) SetPassthrough(on bool) {
 	e.passthrough.Store(on)
-	e.mu.RLock()
-	r := e.router
-	e.mu.RUnlock()
-	if r != nil {
-		r.SetPassthrough(on)
-	}
+	e.applyPassthrough()
 	e.changed()
 }
 
@@ -196,7 +215,7 @@ func (e *Engine) Start(stateDir string) error {
 	routes.SetConfig(cfg)
 	router := NewRouter(routes, e.dialProfile, e.opts.Logf)
 	tunnels := newTunnelSet(e.dialProfile, e.opts.Logf)
-	router.SetPassthrough(e.passthrough.Load())
+	router.SetPassthrough(e.passthrough.Load()) // packets are not running yet
 	router.SetLocalPorts(tunnels.has)
 	if err := router.Listen(e.opts.Listen); err != nil {
 		return err
@@ -208,15 +227,22 @@ func (e *Engine) Start(stateDir string) error {
 	e.router = router
 	e.tunnels = tunnels
 	e.nodes = map[string]*nodeEntry{}
+	e.dropAllDevices()
 	e.logsMode = wantLogs(cfg)
 	e.up = true
 	e.stopping = false
 	e.stopCh = make(chan struct{})
+	e.aa.err = ""
 	e.mu.Unlock()
 
+	if e.allAppsWanted(cfg) {
+		if err := e.newMuxLocked(stateDir, routes); err != nil {
+			e.setAllAppsError("could not start all-apps mode: " + err.Error())
+		}
+	}
 	e.expirePendingLocked()
 	for _, name := range e.cfg.Names() {
-		if !e.cfg.Profiles[name].Paused {
+		if shouldRun(e.cfg.Profiles[name]) {
 			e.startNodeLocked(name)
 		}
 	}
@@ -250,10 +276,12 @@ func (e *Engine) Stop() {
 	e.mu.Lock()
 	nodes := e.nodes
 	e.nodes = map[string]*nodeEntry{}
+	e.dropAllDevices()
 	e.up = false
 	e.stopping = false
 	e.mu.Unlock()
 	closeNodes(nodes)
+	e.closeMux()
 	e.changed()
 }
 
@@ -261,18 +289,26 @@ func closeNodes(nodes map[string]*nodeEntry) {
 	var wg sync.WaitGroup
 	for _, ne := range nodes {
 		wg.Add(1)
-		go func(n Node) {
+		go func(ne *nodeEntry) {
 			defer wg.Done()
-			_ = n.Close()
-		}(ne.node)
+			if ne.node != nil {
+				_ = ne.node.Close()
+			}
+			if ne.tun != nil {
+				_ = ne.tun.Close() // tsnet closes it too; closing twice is fine
+			}
+		}(ne)
 	}
 	wg.Wait()
 }
 
+// shouldRun: the profile's node is started with the engine.
+func shouldRun(p *Profile) bool { return !p.Paused && !p.SignedOut }
+
 // wantLogs: some tailnet that will run requires Tailscale's logging.
 func wantLogs(c *Config) bool {
 	for _, p := range c.Profiles {
-		if p.TailscaleLogs && !p.Paused {
+		if p.TailscaleLogs && shouldRun(p) {
 			return true
 		}
 	}
@@ -309,9 +345,10 @@ func (e *Engine) startNodeLocked(name string) {
 	err := os.MkdirAll(dir, 0o700)
 	var n Node
 	if err == nil {
+		ne.tun = e.linkFor(name)
 		n, err = e.opts.NodeFactory(NodeOptions{
 			Name: name, Dir: dir, Hostname: hostname, AuthKey: p.AuthKey,
-			Logs: e.logsMode, Logf: e.opts.Logf,
+			Logs: e.logsMode, Logf: e.opts.Logf, Tun: ne.tun,
 		})
 	}
 	if err == nil {
@@ -336,8 +373,12 @@ func (e *Engine) stopNodeLocked(name string) {
 	ne := e.nodes[name]
 	delete(e.nodes, name)
 	e.mu.Unlock()
+	e.dropDevices(name)
 	if ne != nil && ne.node != nil {
 		_ = ne.node.Close()
+	}
+	if ne != nil && ne.tun != nil {
+		_ = ne.tun.Close()
 	}
 	if e.routes != nil {
 		e.routes.Forget(name)
@@ -359,11 +400,12 @@ func (e *Engine) reconcileLogsLocked() {
 	e.mu.Lock()
 	nodes := e.nodes
 	e.nodes = map[string]*nodeEntry{}
+	e.dropAllDevices()
 	e.logsMode = want
 	e.mu.Unlock()
 	closeNodes(nodes)
 	for _, name := range e.cfg.Names() {
-		if !e.cfg.Profiles[name].Paused {
+		if shouldRun(e.cfg.Profiles[name]) {
 			e.startNodeLocked(name)
 		}
 	}
@@ -461,7 +503,7 @@ func (e *Engine) pollOnce() {
 	}
 	e.mu.RUnlock()
 
-	for _, ne := range entries {
+	for name, ne := range entries {
 		if ne.node == nil {
 			continue
 		}
@@ -473,7 +515,17 @@ func (e *Engine) pollOnce() {
 		}
 		e.mu.Lock()
 		ne.status = st
+		m := e.aa.mux
 		e.mu.Unlock()
+		if m != nil && st.State == StateRunning {
+			var addrs []netip.Addr
+			for _, s := range st.IPs {
+				if a, err := netip.ParseAddr(s); err == nil {
+					addrs = append(addrs, a)
+				}
+			}
+			m.SetAddrs(name, addrs)
+		}
 	}
 	e.expirePendingLocked()
 
@@ -655,6 +707,7 @@ func (e *Engine) removeProfileLocked(name string) error {
 	if err := os.RemoveAll(e.nodeDir(name)); err != nil {
 		return err
 	}
+	e.forgetPoolLocked(name)
 	if e.Running() {
 		e.tunnels.sync(cfg.Tunnels)
 		e.reconcileLogsLocked()
@@ -718,15 +771,22 @@ func (e *Engine) learnOnce(stop chan struct{}) {
 
 // State is the state command's result.
 type State struct {
-	Up            bool           `json:"up"`
-	Version       string         `json:"version"`
-	Proxy         string         `json:"proxy"`
-	PACURL        string         `json:"pac_url"`
-	Unlocked      bool           `json:"unlocked"`
-	FreeProfiles  int            `json:"free_profiles"`
-	TailscaleLogs bool           `json:"tailscale_logs"`
-	Passthrough   bool           `json:"passthrough"`
-	MatchDomains  []string       `json:"match_domains"`
+	Up            bool     `json:"up"`
+	Version       string   `json:"version"`
+	Proxy         string   `json:"proxy"`
+	PACURL        string   `json:"pac_url"`
+	Unlocked      bool     `json:"unlocked"`
+	FreeProfiles  int      `json:"free_profiles"`
+	TailscaleLogs bool     `json:"tailscale_logs"`
+	Passthrough   bool     `json:"passthrough"`
+	MatchDomains  []string `json:"match_domains"`
+	// All-apps mode (allapps.go). AllApps is the saved setting. The shell
+	// uses all-apps network settings when AllApps is true and AllAppsError
+	// is "", else proxy settings. AllAppsActive: the tun is attached.
+	AllApps       bool           `json:"all_apps"`
+	AllAppsActive bool           `json:"all_apps_active"`
+	AllAppsError  string         `json:"all_apps_error"`
+	Tunnel        TunnelSettings `json:"tunnel"`
 	Profiles      []ProfileState `json:"profiles"`
 	Tunnels       []Tunnel       `json:"tunnels"`
 }
@@ -743,7 +803,14 @@ type ProfileState struct {
 	Paused   bool     `json:"paused"`
 	Error    string   `json:"error"`
 	AuthURL  string   `json:"auth_url"`
+	// NeedsLogin is true only when a sign-in is known to be required.
+	NeedsLogin bool `json:"needs_login"`
+	// Connecting: the node is starting and needs no sign-in.
+	Connecting bool `json:"connecting"`
 }
+
+// nodeStateFile is where a node keeps its keys (tsnet's own file name).
+const nodeStateFile = "tailscaled.state"
 
 // State reports the engine's state. While off it reads the config from disk.
 func (e *Engine) State() State {
@@ -762,11 +829,17 @@ func (e *Engine) State() State {
 	st := State{
 		Up: up, Version: Version, Proxy: e.opts.Listen, Unlocked: cfg.Unlocked,
 		FreeProfiles: FreeProfiles, Profiles: []ProfileState{}, Tunnels: append([]Tunnel{}, cfg.Tunnels...),
+		AllApps: !cfg.ProxyOnly, Tunnel: tunnelSettings(),
 	}
 	if up {
 		st.Proxy = e.router.Addr()
 		st.TailscaleLogs = e.logsMode
-		st.Passthrough = e.passthrough.Load()
+		st.Passthrough = e.passthrough.Load() && !e.aa.active
+		st.AllAppsActive = e.aa.active
+		st.AllAppsError = e.aa.err
+		if st.AllApps && e.aa.mux == nil && st.AllAppsError == "" {
+			st.AllAppsError = "all-apps mode is not available here"
+		}
 		st.MatchDomains = e.routes.MatchDomains()
 	} else {
 		rt := NewRouteTable("", nil)
@@ -783,7 +856,18 @@ func (e *Engine) State() State {
 			Name: name, Account: p.Account, Tailnet: p.Tailnet, Paused: p.Paused,
 			Suffixes: append([]string{}, p.Suffixes...), IPs: []string{},
 		}
-		if ne := e.nodes[name]; up && ne != nil {
+		ne := e.nodes[name]
+		if !up {
+			ne = nil
+		}
+		ps.NeedsLogin = p.SignedOut
+		if ne == nil && !p.SignedOut && !p.Pending && !(up && shouldRun(p)) {
+			// Nothing running to ask: a tailnet that has signed in before has node state on disk.
+			if _, err := os.Stat(filepath.Join(e.nodeDir(name), nodeStateFile)); err != nil && os.IsNotExist(err) {
+				ps.NeedsLogin = true
+			}
+		}
+		if ne != nil {
 			ps.Error = ne.err
 			s := ne.status
 			ps.Hostname = s.Hostname
@@ -792,6 +876,11 @@ func (e *Engine) State() State {
 			if !ps.Online && ps.Error == "" {
 				ps.AuthURL = s.AuthURL
 			}
+			if ps.Online {
+				ps.NeedsLogin = false
+			} else if s.State == StateNeedsLogin || s.AuthURL != "" {
+				ps.NeedsLogin = true
+			}
 			if ps.Account == "" {
 				ps.Account = s.Account
 			}
@@ -799,6 +888,7 @@ func (e *Engine) State() State {
 				ps.Tailnet = s.Tailnet
 			}
 		}
+		ps.Connecting = up && shouldRun(p) && !ps.Online && !ps.NeedsLogin && ps.Error == ""
 		st.Profiles = append(st.Profiles, ps)
 	}
 	return st
@@ -809,7 +899,9 @@ func (e *Engine) State() State {
 func (e *Engine) changed() {
 	st := e.State()
 	b, _ := json.Marshal(st)
-	dom := strings.Join(st.MatchDomains, ",")
+	// "domains" means: re-apply the network settings. That is also needed
+	// when the mode the shell should use changes.
+	dom := strings.Join(st.MatchDomains, ",") + "|all_apps=" + strconv.FormatBool(st.AllApps && st.AllAppsError == "")
 	e.nmu.Lock()
 	first := e.lastState == nil
 	stateChanged := !bytes.Equal(b, e.lastState)
@@ -984,7 +1076,17 @@ func (e *Engine) dispatch(req Request) (any, error) {
 		if owner != "" {
 			o = owner
 		}
-		return map[string]any{"host": host, "owner": o}, nil
+		out := map[string]any{"host": host, "owner": o}
+		e.mu.RLock()
+		routes, up := e.routes, e.up
+		e.mu.RUnlock()
+		if up && owner != "" && routes.ViaAddress(host) {
+			if d := SuggestDomain(host); d != "" {
+				out["via"] = "address"
+				out["suggest_domain"] = d
+			}
+		}
+		return out, nil
 	case "add_tunnel":
 		var t Tunnel
 		if err := decodeArgs(req.Args, &t); err != nil {
@@ -1011,13 +1113,43 @@ func (e *Engine) dispatch(req Request) (any, error) {
 		}
 		return nil, e.SetUnlocked(*a.On)
 	case "devices":
+		var a DevicesArgs
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return nil, err
+		}
+		return e.Devices(a)
+	case "import_setup":
 		var a struct {
-			Name string `json:"name"`
+			Link   string `json:"link"`
+			DryRun bool   `json:"dry_run"`
 		}
 		if err := decodeArgs(req.Args, &a); err != nil {
 			return nil, err
 		}
-		return e.Devices(a.Name)
+		return e.ImportSetup(a.Link, a.DryRun)
+	case "set_all_apps":
+		var a struct {
+			On *bool `json:"on"`
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return nil, err
+		}
+		if a.On == nil {
+			return nil, errors.New("bad arguments: on is required")
+		}
+		return nil, e.SetAllApps(*a.On)
+	case "add_domain", "remove_domain":
+		var a struct {
+			Name   string `json:"name"`
+			Domain string `json:"domain"`
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return nil, err
+		}
+		if req.Cmd == "add_domain" {
+			return nil, e.AddDomain(a.Name, a.Domain)
+		}
+		return nil, e.RemoveDomain(a.Name, a.Domain)
 	case "":
 		return nil, errors.New("bad request: no cmd")
 	default:
@@ -1063,9 +1195,10 @@ func (e *Engine) Login(name string) error {
 	if p == nil {
 		return fmt.Errorf("there is no tailnet called %q", name)
 	}
-	if p.Paused {
+	if p.Paused || p.SignedOut {
 		cfg := e.cfg.Clone()
 		cfg.Profiles[name].Paused = false
+		cfg.Profiles[name].SignedOut = false
 		if err := e.commitLocked(cfg); err != nil {
 			return err
 		}
@@ -1101,6 +1234,9 @@ func (e *Engine) SetConnected(name string, on bool) error {
 	}
 	cfg := e.cfg.Clone()
 	cfg.Profiles[name].Paused = !on
+	if on {
+		cfg.Profiles[name].SignedOut = false
+	}
 	if err := e.commitLocked(cfg); err != nil {
 		return err
 	}
@@ -1250,8 +1386,146 @@ func (e *Engine) SetUnlocked(on bool) error {
 	return e.commitLocked(cfg)
 }
 
-// Devices lists the other devices on a tailnet.
-func (e *Engine) Devices(name string) ([]Device, error) {
+// Device paging limits (the devices command).
+const (
+	devicesDefaultLimit = 50
+	devicesMaxLimit     = 200
+	devicesCacheTTL     = 5 * time.Second
+)
+
+// DevicesArgs are the devices command's arguments.
+type DevicesArgs struct {
+	Name    string `json:"name"`
+	Query   string `json:"query"`
+	Online  bool   `json:"online"`
+	Limit   int    `json:"limit"`
+	Offset  int    `json:"offset"`
+	Refresh bool   `json:"refresh"`
+}
+
+// DevicePage is one page of a tailnet's devices.
+type DevicePage struct {
+	Devices []Device `json:"devices"`
+	Total   int      `json:"total"`
+	Online  int      `json:"online"`
+	Matched int      `json:"matched"`
+}
+
+// devCache is a tailnet's device list, reduced and sorted, kept for a few
+// seconds so paging and search-as-you-type do not fetch the status each time.
+type devCache struct {
+	node   Node
+	at     time.Time
+	list   []Device
+	online int
+}
+
+func (e *Engine) dropDevices(name string) {
+	e.devMu.Lock()
+	delete(e.devCaches, name)
+	e.devMu.Unlock()
+}
+
+func (e *Engine) dropAllDevices() {
+	e.devMu.Lock()
+	e.devCaches = nil
+	e.devMu.Unlock()
+}
+
+// sortDevices orders this device first, then online before offline, then by
+// name (case-insensitive).
+func sortDevices(ds []Device) {
+	sort.SliceStable(ds, func(i, j int) bool {
+		a, b := &ds[i], &ds[j]
+		if a.Self != b.Self {
+			return a.Self
+		}
+		if a.Online != b.Online {
+			return a.Online
+		}
+		if c := foldCompare(a.Name, b.Name); c != 0 {
+			return c < 0
+		}
+		return a.DNSName < b.DNSName
+	})
+}
+
+// foldCompare compares case-insensitively without allocating.
+func foldCompare(a, b string) int {
+	for a != "" && b != "" {
+		ra, na := utf8.DecodeRuneInString(a)
+		rb, nb := utf8.DecodeRuneInString(b)
+		if ra != rb {
+			ra, rb = unicode.ToLower(ra), unicode.ToLower(rb)
+			if ra != rb {
+				if ra < rb {
+					return -1
+				}
+				return 1
+			}
+		}
+		a, b = a[na:], b[nb:]
+	}
+	switch {
+	case a == "" && b == "":
+		return 0
+	case a == "":
+		return -1
+	}
+	return 1
+}
+
+// containsFold reports whether s contains q (already lower-cased),
+// ignoring case. ASCII queries match without allocating.
+func containsFold(s, q string) bool {
+	if q == "" {
+		return true
+	}
+	ascii := true
+	for i := 0; i < len(q); i++ {
+		if q[i] >= utf8.RuneSelf {
+			ascii = false
+			break
+		}
+	}
+	if !ascii {
+		return strings.Contains(strings.ToLower(s), q)
+	}
+	for i := 0; i+len(q) <= len(s); i++ {
+		j := 0
+		for ; j < len(q); j++ {
+			c := s[i+j]
+			if 'A' <= c && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != q[j] {
+				break
+			}
+		}
+		if j == len(q) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Device) matches(q string) bool {
+	if containsFold(d.Name, q) || containsFold(d.DNSName, q) || containsFold(d.OS, q) {
+		return true
+	}
+	for _, ip := range d.IPs {
+		if containsFold(ip, q) {
+			return true
+		}
+	}
+	return false
+}
+
+// Devices returns one page of a tailnet's devices: this device first, then
+// online ones, then by name; filtered by Query (name, DNS name, any address
+// or OS) and Online.
+func (e *Engine) Devices(a DevicesArgs) (*DevicePage, error) {
+	name := a.Name
 	e.mu.RLock()
 	up := e.up
 	_, exists := e.cfg.Profiles[name]
@@ -1270,14 +1544,46 @@ func (e *Engine) Devices(name string) ([]Device, error) {
 	if node == nil || !running {
 		return nil, fmt.Errorf("tailnet %q is not connected", name)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	devs, err := node.Devices(ctx)
-	if err != nil {
-		return nil, err
+	limit := a.Limit
+	if limit <= 0 {
+		limit = devicesDefaultLimit
 	}
-	if devs == nil {
-		devs = []Device{}
+	limit = min(limit, devicesMaxLimit)
+	offset := max(a.Offset, 0)
+
+	e.devMu.Lock()
+	defer e.devMu.Unlock()
+	c := e.devCaches[name]
+	if c == nil || c.node != node || a.Refresh || e.opts.Now().Sub(c.at) > devicesCacheTTL {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		devs, err := node.Devices(ctx)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		sortDevices(devs)
+		c = &devCache{node: node, at: e.opts.Now(), list: devs}
+		for i := range devs {
+			if devs[i].Online {
+				c.online++
+			}
+		}
+		if e.devCaches == nil {
+			e.devCaches = map[string]*devCache{}
+		}
+		e.devCaches[name] = c
 	}
-	return devs, nil
+	page := &DevicePage{Devices: []Device{}, Total: len(c.list), Online: c.online}
+	q := strings.ToLower(strings.TrimSpace(a.Query))
+	for i := range c.list {
+		d := &c.list[i]
+		if (a.Online && !d.Online) || !d.matches(q) {
+			continue
+		}
+		if page.Matched >= offset && len(page.Devices) < limit {
+			page.Devices = append(page.Devices, *d)
+		}
+		page.Matched++
+	}
+	return page, nil
 }

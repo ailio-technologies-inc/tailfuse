@@ -7,7 +7,7 @@ import { AppState } from "react-native";
 
 import * as engine from "./engine";
 import * as haptics from "./haptics";
-import { friendly } from "./logic";
+import { friendly, isLimitError, stabilize, type UpgradeResume } from "./logic";
 import type { State } from "./types";
 
 const ASKED_KEY = "tailfuse.permission.asked.v1";
@@ -17,7 +17,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ErrorNote = { title: string; text: string };
 
-export function useTailfuse() {
+// `onLimit` is told when the engine refuses a tailnet past the free limit (instead of showing a note).
+export function useTailfuse(onLimit?: (resume: UpgradeResume) => void) {
+  const limitRef = useRef(onLimit);
+  useEffect(() => {
+    limitRef.current = onLimit;
+  });
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState<ErrorNote | null>(null);
   const [powerBusy, setPowerBusy] = useState(false);
@@ -39,6 +44,10 @@ export function useTailfuse() {
   }, []);
 
   const showError = useCallback((err: unknown) => {
+    if (isLimitError(err) && limitRef.current) {
+      limitRef.current(null);
+      return;
+    }
     const [title, text] = friendly(err);
     haptics.warning();
     setError({ title, text });
@@ -49,7 +58,7 @@ export function useTailfuse() {
     inflight.current = true;
     try {
       const s = await engine.getState();
-      if (alive.current) setState(s);
+      if (alive.current) setState((prev) => stabilize(prev, s));
       lastPollError.current = "";
       return s;
     } catch (err) {
@@ -165,7 +174,7 @@ export function useTailfuse() {
       await sleep(1000);
       const s = await engine.getState().catch(() => null);
       if (!s) continue;
-      if (alive.current) setState(s);
+      if (alive.current) setState((prev) => stabilize(prev, s));
       if (!s.up) return null; // switched off meanwhile
       const p = s.profiles.find((x) => x.name === name);
       if (!p) {
@@ -207,7 +216,8 @@ export function useTailfuse() {
       const { name } = await engine.addProfile();
       finishSignIn(await waitForSignIn(name, before, true));
     } catch (err) {
-      showError(err);
+      if (isLimitError(err) && limitRef.current) limitRef.current("add");
+      else showError(err);
     } finally {
       if (alive.current) setSigningIn(null);
       refresh();
@@ -219,6 +229,8 @@ export function useTailfuse() {
     setMessage("");
     setSigningIn(name);
     try {
+      // A tailnet set up from a computer's code can be signed in to while Tailfuse is off: turn it on first.
+      if (!(await ensureOn())) return;
       await engine.login(name);
       finishSignIn(await waitForSignIn(name, new Set(), false));
     } catch (err) {
@@ -227,7 +239,7 @@ export function useTailfuse() {
       if (alive.current) setSigningIn(null);
       refresh();
     }
-  }, [signingIn, waitForSignIn, finishSignIn, refresh, showError]);
+  }, [signingIn, ensureOn, waitForSignIn, finishSignIn, refresh, showError]);
 
   return {
     state,

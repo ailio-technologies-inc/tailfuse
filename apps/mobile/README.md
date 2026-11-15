@@ -44,6 +44,25 @@ npx expo run:ios --device --configuration Release  # a phone on USB, Xcode signi
 
 `modules/tailfuse-engine/ios/README.md` explains how the pieces fit and what to check on the phone.
 
+## Android build
+
+`mise install` (repo root) gives you JDK 17 (Temurin), and `mise.toml` points `ANDROID_HOME`, `ANDROID_SDK_ROOT` and `ANDROID_NDK_HOME` at `~/Library/Android/sdk` and puts `sdkmanager` and `adb` on the PATH. It does not install the Android SDK itself. Once, download Google's `commandlinetools-mac` zip from https://developer.android.com/studio#command-line-tools-only into `~/Library/Android/sdk/cmdline-tools/latest`, then:
+
+```sh
+yes | sdkmanager --licenses
+sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.30.5"
+```
+
+These are the versions React Native 0.88 asks for (compileSdk 37, build-tools 37.0.0, NDK 27.1.12297006, CMake 3.30.5, Gradle 9.4.1 through the wrapper). The one NDK also serves gomobile (`-androidapi 26`). Then:
+
+```sh
+moon run mobile-engine:bind-android                 # the Go .aar (gitignored); TF_ANDROID_ABIS=arm64 builds one ABI
+npx expo prebuild --platform android
+cd android && ./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
+```
+
+Built and checked on an Apple Silicon Mac (arm64 debug APK about 90 MB, `lib/arm64-v8a/libgojni.so` inside, merged manifest has the VPN service and permissions). Not run on a device or emulator. Give it about 8 GB of free disk and 7 minutes for the first Gradle build (it downloads Gradle 9.4.1 and the Android Gradle plugin); `~/.gradle` grows to about 4 GB. The APK is `android/app/build/outputs/apk/debug/app-debug.apk`; install it with `adb install -r`.
+
 ## Where things live
 
 - `App.tsx`, `src/` — the screen. `src/logic.ts` holds the pure rules (status line, row state,

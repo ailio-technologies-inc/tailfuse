@@ -157,7 +157,7 @@ func (rt *RouteTable) Owner(host string) string {
 	defer rt.mu.RUnlock()
 	best, bestLen := "", 0
 	for s, p := range rt.bySuffix {
-		if strings.HasSuffix(host, s) && (len(s) > bestLen || (len(s) == bestLen && p < best)) {
+		if suffixCovers(host, s) && (len(s) > bestLen || (len(s) == bestLen && p < best)) {
 			best, bestLen = p, len(s)
 		}
 	}
@@ -518,4 +518,53 @@ func ServedDomains(routes []string, search []string) []string {
 		}
 	}
 	return out
+}
+
+// ViaAddress reports whether host is routed only because it was found to
+// point at a device on a tailnet (a remembered exact host), not because a
+// suffix or a served domain covers it.
+func (rt *RouteTable) ViaAddress(host string) bool {
+	host = normalizeHost(host)
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	for s := range rt.bySuffix {
+		if suffixCovers(host, s) {
+			return false
+		}
+	}
+	for d := range rt.domains {
+		if host == d || strings.HasSuffix(host, "."+d) {
+			return false
+		}
+	}
+	p, ok := rt.hosts[host]
+	return ok && rt.profiles[p]
+}
+
+// PublicFallback reports whether an owned name may be looked up in ordinary
+// DNS when its tailnet's own DNS has no answer: a domain of the person's own
+// (a configured suffix outside ts.net, added with add_domain or synced) or a
+// remembered host. MagicDNS names and domains a tailnet serves never are:
+// they are private to the tailnet. The proxy path does the same (the node's
+// DNS first, then the device's).
+func (rt *RouteTable) PublicFallback(host string) bool {
+	host = normalizeHost(host)
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	best := ""
+	for s := range rt.bySuffix {
+		if suffixCovers(host, s) && len(s) > len(best) {
+			best = s
+		}
+	}
+	if best != "" {
+		return best != ".ts.net" && !strings.HasSuffix(best, ".ts.net")
+	}
+	for d := range rt.domains {
+		if host == d || strings.HasSuffix(host, "."+d) {
+			return false
+		}
+	}
+	p, ok := rt.hosts[host]
+	return ok && rt.profiles[p]
 }

@@ -7,6 +7,7 @@
 #          (device arm64 + simulator arm64/x86_64, minimum iOS 16)
 # android: apps/mobile/modules/tailfuse-engine/android/libs/tfmobile.aar
 #          (minimum API 26; needs ANDROID_NDK_HOME, and ANDROID_HOME for the SDK)
+#          TF_ANDROID_ABIS limits the ABIs, e.g. TF_ANDROID_ABIS=arm64 (default: all four)
 #
 # Installs gomobile and gobind (go install) and runs `gomobile init` when missing.
 set -euo pipefail
@@ -84,10 +85,14 @@ build_android() {
 		exit 1
 	fi
 	local out="$module/android/libs/tfmobile.aar"
+	local abis=""
+	if [ -n "${TF_ANDROID_ABIS:-}" ]; then
+		abis="/${TF_ANDROID_ABIS//,/,android/}"
+	fi
 	mkdir -p "$(dirname "$out")"
 	rm -f "$out" "${out%.aar}-sources.jar"
 	echo "building $out"
-	(cd "$engine" && gomobile bind -target android -androidapi 26 "${common[@]}" -o "$out" ./tfmobile)
+	(cd "$engine" && gomobile bind -target "android$abis" -androidapi 26 "${common[@]}" -o "$out" ./tfmobile)
 	ls -lh "$out"
 }
 

@@ -1,0 +1,5 @@
+{
+  "_comment": "Shared by crates/tailfuse-core (writer) and engines/mobile (reader). The link is the base64url (no padding) of the compact JSON in `json`, exactly as written here.",
+  "json": "{\"v\":1,\"from\":\"Ada's MacBook\",\"profiles\":[{\"name\":\"personal\",\"account\":\"ada@example.com\",\"suffixes\":[\".home-lab.ts.net\"]},{\"name\":\"work\",\"account\":\"ada@work.example\",\"suffixes\":[\".work.ts.net\",\".internal.example\"],\"accept_routes\":true,\"exit_node\":\"exit-us\"}],\"tunnels\":[{\"name\":\"prod-db\",\"listen\":\"127.0.0.1:5432\",\"target\":\"db.work.ts.net:5432\",\"profile\":\"work\"}]}",
+  "link": "tailfuse://sync?v=1&d=eyJ2IjoxLCJmcm9tIjoiQWRhJ3MgTWFjQm9vayIsInByb2ZpbGVzIjpbeyJuYW1lIjoicGVyc29uYWwiLCJhY2NvdW50IjoiYWRhQGV4YW1wbGUuY29tIiwic3VmZml4ZXMiOlsiLmhvbWUtbGFiLnRzLm5ldCJdfSx7Im5hbWUiOiJ3b3JrIiwiYWNjb3VudCI6ImFkYUB3b3JrLmV4YW1wbGUiLCJzdWZmaXhlcyI6WyIud29yay50cy5uZXQiLCIuaW50ZXJuYWwuZXhhbXBsZSJdLCJhY2NlcHRfcm91dGVzIjp0cnVlLCJleGl0X25vZGUiOiJleGl0LXVzIn1dLCJ0dW5uZWxzIjpbeyJuYW1lIjoicHJvZC1kYiIsImxpc3RlbiI6IjEyNy4wLjAuMTo1NDMyIiwidGFyZ2V0IjoiZGIud29yay50cy5uZXQ6NTQzMiIsInByb2ZpbGUiOiJ3b3JrIn1dfQ"
+}

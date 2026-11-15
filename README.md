@@ -97,6 +97,7 @@ Suffix ownership is strict. Each suffix belongs to exactly one profile, and vali
 | `tailfuse run curl http://wiki.work.ts.net` | Run any command with proxy env (`socks5h`, remote DNS) |
 | `tailfuse env` | Print the proxy env for your shell |
 | `tailfuse tunnel add prod-db --listen 127.0.0.1:5432 --target db.work.ts.net:5432 --profile work` | Pin a local port to a tailnet service |
+| `tailfuse phone` | Show a QR code that sets up the same tailnets in the phone app (setup only, no keys) |
 | `tailfuse serve-pac` | Just the PAC URL, for manual browser configuration |
 
 ## How it works
@@ -110,6 +111,8 @@ Suffix ownership is strict. Each suffix belongs to exactly one profile, and vali
 ## Desktop app
 
 A Tauri menu-bar app (`apps/desktop/`) wraps the same core. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL. It asks once before setting it, and never overwrites a PAC URL it did not set.
+
+To set up the phone app, open Settings and choose Set up your phone (or run `tailfuse phone`). The code carries your tailnets, their suffixes and local ports; it never carries passwords, auth keys or the license, so you sign in to each tailnet once on the phone.
 
 The app updates itself. It checks the latest GitHub release's `latest.json` a minute after launch and every six hours, installs a newer version in the background, and relaunches into it once Tailfuse is off, so a session is never cut. Every update is signed with the Tailfuse updater key and verified against the public key built into the app; there is no update server beyond GitHub Releases.
 
@@ -174,7 +177,7 @@ Cargo is one workspace with one `target/` at the root; moon does not cache it, c
 
 ## Phone apps
 
-There are iOS and Android apps in `apps/mobile`: an Expo (React Native) interface over a Go engine in `engines/mobile` that runs one embedded Tailscale node per tailnet, with the same hostname-suffix routing as the desktop core. Two tailnets are free; more are a one-time in-app purchase. They are not released yet and have not been tested on a device.
+There are iOS and Android apps in `apps/mobile`: an Expo (React Native) interface over a Go engine in `engines/mobile` that runs one embedded Tailscale node per tailnet, with the same hostname-suffix routing as the desktop core. Two tailnets are free; more are a one-time in-app purchase. By default every app on the phone reaches every tailnet, by name and by raw `100.x` address, the way the Tailscale app does for one: the engine routes Tailscale's ranges into the VPN and hands each packet to the owning tailnet's WireGuard engine, giving devices that two tailnets number alike their own stable `198.18.x.x` address. A switch in Settings drops back to proxy mode, where only browsers and other proxy-aware apps do. They are not released yet: proxy mode has run on an iPhone, all-apps mode not yet on a device.
 
 ```sh
 cd apps/mobile && npm ci && npx expo start --web    # preview the interface in a browser, with a mock engine

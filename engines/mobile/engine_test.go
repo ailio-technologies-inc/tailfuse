@@ -340,9 +340,9 @@ func TestSignInRenamesAndRoutes(t *testing.T) {
 	n.mu.Lock()
 	n.devices = []Device{{Name: "nas", DNSName: "nas.tail1234.ts.net", IPs: []string{"100.64.0.9"}, OS: "linux", Online: true}}
 	n.mu.Unlock()
-	var devs []Device
+	var devs DevicePage
 	json.Unmarshal(mustOK(t, e, "devices", map[string]any{"name": "example"}), &devs)
-	if len(devs) != 1 || devs[0].DNSName != "nas.tail1234.ts.net" {
+	if len(devs.Devices) != 1 || devs.Devices[0].DNSName != "nas.tail1234.ts.net" || devs.Total != 1 || devs.Online != 1 || devs.Matched != 1 {
 		t.Fatalf("devices %+v", devs)
 	}
 	mustFail(t, e, "devices", map[string]any{"name": "nope"}, "there is no tailnet called")

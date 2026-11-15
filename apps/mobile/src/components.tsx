@@ -2,8 +2,9 @@ import { useEffect, useState, type ComponentRef, type ReactNode, type Ref } from
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Animated,
+  Platform,
   Pressable,
+  Switch as RNSwitch,
   Text,
   TextInput,
   View,
@@ -13,9 +14,10 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-import Svg, { Circle, Path, Rect } from "react-native-svg";
+import Svg, { Circle, Rect } from "react-native-svg";
 
-import * as haptics from "./haptics";
+import { Icon } from "./Icon";
+import { capList } from "./logic";
 import { BTN_H, BTN_SLOP, MIN_TOUCH, colors, fonts, radius, rowPressed, size } from "./theme";
 
 // ---------- motion ----------
@@ -76,49 +78,17 @@ export function Mark({ width = 23 }: { width?: number }) {
 }
 
 type IconProps = { size?: number; color?: string; strokeWidth?: number };
-const stroke = { fill: "none", strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
-function Icon({ d, size: s = 18, color = colors.muted, strokeWidth = 2, children }: IconProps & { d?: string; children?: ReactNode }) {
-  return (
-    <Svg viewBox="0 0 24 24" width={s} height={s} accessible={false}>
-      {d ? <Path d={d} stroke={color} strokeWidth={strokeWidth} {...stroke} /> : null}
-      {children}
-    </Svg>
-  );
-}
-
-export const TrashIcon = (p: IconProps) => <Icon {...p} d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />;
-export const CheckIcon = (p: IconProps) => <Icon {...p} d="M5 12l5 5 9-10" />;
-export const PlusIcon = ({ color = colors.accentInk, strokeWidth = 2.2, ...p }: IconProps) => <Icon {...p} color={color} strokeWidth={strokeWidth} d="M12 5v14M5 12h14" />;
-export const CloseIcon = (p: IconProps) => <Icon {...p} d="M6 6l12 12M18 6L6 18" />;
-export const ChevronIcon = ({ direction = "right", ...p }: IconProps & { direction?: "right" | "down" }) => (
-  <Svg viewBox="0 0 24 24" width={p.size ?? 18} height={p.size ?? 18} accessible={false} style={{ transform: [{ rotate: direction === "down" ? "90deg" : "0deg" }] }}>
-    <Path d="M9 6l6 6-6 6" stroke={p.color ?? colors.muted} strokeWidth={p.strokeWidth ?? 2} {...stroke} />
-  </Svg>
-);
-export const GearIcon = ({ color = colors.ink, size: s = 22, strokeWidth = 1.8 }: IconProps) => (
-  <Svg viewBox="0 0 24 24" width={s} height={s} accessible={false}>
-    <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={strokeWidth} fill="none" />
-    <Path
-      d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"
-      stroke={color}
-      strokeWidth={strokeWidth}
-      {...stroke}
-    />
-  </Svg>
-);
-export const SearchIcon = (p: IconProps) => (
-  <Icon {...p} d="M20 20l-4.2-4.2">
-    <Circle cx={11} cy={11} r={6.5} stroke={p.color ?? colors.muted} strokeWidth={p.strokeWidth ?? 2} fill="none" />
-  </Icon>
-);
-// A port: a box with an arrow into it.
-export const PortIcon = (p: IconProps) => <Icon {...p} d="M4 12h9M10 8l4 4-4 4M15 5h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4" />;
-export const CopyIcon = (p: IconProps) => (
-  <Icon {...p} d="M5 15V6a1 1 0 0 1 1-1h9">
-    <Rect x={9} y={9} width={11} height={11} rx={1} stroke={p.color ?? colors.muted} strokeWidth={p.strokeWidth ?? 2} fill="none" />
-  </Icon>
-);
+export const TrashIcon = (p: IconProps) => <Icon name="trash" {...p} />;
+export const CheckIcon = (p: IconProps) => <Icon name="check" weight="semibold" {...p} />;
+export const PlusIcon = ({ color = colors.accentInk, ...p }: IconProps) => <Icon name="plus" weight="semibold" color={color} {...p} />;
+export const CloseIcon = (p: IconProps) => <Icon name="close" {...p} />;
+export const ChevronIcon = ({ direction = "right", ...p }: IconProps & { direction?: "right" | "down" }) => <Icon name={direction === "down" ? "chevron-down" : "chevron-right"} size={14} {...p} />;
+export const GearIcon = ({ color = colors.ink, size: s = 22 }: IconProps) => <Icon name="gear" size={s} color={color} />;
+export const SearchIcon = (p: IconProps) => <Icon name="search" {...p} />;
+export const PortIcon = (p: IconProps) => <Icon name="port" {...p} />;
+export const CopyIcon = (p: IconProps) => <Icon name="copy" {...p} />;
+export const ScanIcon = (p: IconProps) => <Icon name="scan" {...p} />;
 
 // ---------- controls ----------
 
@@ -126,60 +96,24 @@ type SwitchProps = {
   value: boolean;
   onValueChange: (next: boolean) => void;
   label: string;
+  /** Kept for callers; the platform switch has one size. */
   small?: boolean;
   disabled?: boolean;
 };
 
-// The desktop's switch: 42x24 track, 16 knob (small: 36x20, 14), ok-green when on. A 44pt touch target.
-export function Switch({ value, onValueChange, label, small, disabled }: SwitchProps) {
-  const reduce = useReduceMotion();
-  const w = small ? 36 : 42;
-  const h = small ? 20 : 24;
-  const knob = small ? 14 : 16;
-  const inset = small ? 2 : 3;
-  const travel = w - 2 - knob - inset * 2; // inside the 1px border
-  const [x] = useState(() => new Animated.Value(value ? travel : 0));
-  useEffect(() => {
-    if (reduce) x.setValue(value ? travel : 0);
-    else Animated.timing(x, { toValue: value ? travel : 0, duration: 160, useNativeDriver: true }).start();
-  }, [value, reduce, travel, x]);
-
+// The platform switch (UISwitch / Material), tinted: ok-green when on, graphite when off.
+export function Switch({ value, onValueChange, label, disabled }: SwitchProps) {
   return (
-    <Pressable
-      accessibilityRole="switch"
+    <RNSwitch
       accessibilityLabel={label}
-      accessibilityState={{ checked: value, disabled: !!disabled }}
+      value={value}
       disabled={disabled}
-      onPress={() => {
-        haptics.light();
-        onValueChange(!value);
-      }}
-      hitSlop={{ top: (MIN_TOUCH - h) / 2, bottom: (MIN_TOUCH - h) / 2, left: 6, right: 6 }}
-      style={({ pressed }) => ({ opacity: disabled ? 0.5 : pressed ? 0.7 : 1 })}
-    >
-      <View
-        style={{
-          width: w,
-          height: h,
-          borderRadius: radius.pill,
-          borderWidth: 1,
-          borderColor: value ? colors.ok : colors.lineStrong,
-          backgroundColor: value ? colors.ok : colors.card,
-          justifyContent: "center",
-        }}
-      >
-        <Animated.View
-          style={{
-            width: knob,
-            height: knob,
-            borderRadius: knob / 2,
-            marginLeft: inset - 1,
-            backgroundColor: value ? (small ? "#ffffff" : colors.deep) : colors.muted,
-            transform: [{ translateX: x }],
-          }}
-        />
-      </View>
-    </Pressable>
+      onValueChange={onValueChange}
+      trackColor={{ false: colors.switchOff, true: colors.ok }}
+      thumbColor={Platform.OS === "android" ? (value ? "#ffffff" : colors.muted) : undefined}
+      ios_backgroundColor={colors.switchOff}
+      style={{ opacity: disabled ? 0.5 : 1 }}
+    />
   );
 }
 
@@ -187,7 +121,8 @@ type ButtonProps = {
   title: string;
   onPress: () => void;
   variant?: "primary" | "secondary";
-  armed?: boolean;
+  /** Red text: removes something (the platform's destructive style). */
+  destructive?: boolean;
   disabled?: boolean;
   /** Work in progress: shows a spinner and can't be tapped again. */
   busy?: boolean;
@@ -201,10 +136,10 @@ type ButtonProps = {
 };
 
 // Pill button. Primary: accent fill. Secondary: ink at 8%, no border. 36pt tall plus hitSlop = 44pt.
-export function Button({ title, onPress, variant = "secondary", armed, disabled, busy, block, label, expanded, checked, style }: ButtonProps) {
+export function Button({ title, onPress, variant = "secondary", destructive, disabled, busy, block, label, expanded, checked, style }: ButtonProps) {
   const primary = variant === "primary";
   const off = !!disabled || !!busy;
-  const fg = primary ? colors.accentInk : armed ? colors.bad : colors.ink;
+  const fg = primary ? colors.accentInk : destructive ? colors.bad : colors.ink;
   return (
     <Pressable
       accessibilityRole={checked === undefined ? "button" : "radio"}
@@ -225,8 +160,6 @@ export function Button({ title, onPress, variant = "secondary", armed, disabled,
           justifyContent: "center",
           alignSelf: block ? "stretch" : undefined,
           backgroundColor: primary ? colors.accent : pressed ? "rgba(239,240,241,0.14)" : colors.secondaryFill,
-          borderWidth: armed ? 1 : 0,
-          borderColor: colors.badBorder,
           opacity: disabled ? 0.5 : primary && pressed ? 0.8 : 1,
         },
         style,
@@ -256,20 +189,20 @@ export function LinkButton({ title, onPress, label }: { title: string; onPress: 
   );
 }
 
-export function IconButton({ onPress, label, armed, children }: { onPress: () => void; label: string; armed?: boolean; children: ReactNode }) {
+export function IconButton({ onPress, label, children }: { onPress: () => void; label: string; children: ReactNode }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected: !!armed }}
       onPress={onPress}
+      android_ripple={{ color: "rgba(239,240,241,0.16)", radius: 24 }}
       style={({ pressed }) => ({
         width: MIN_TOUCH,
         height: MIN_TOUCH,
         borderRadius: radius.pill,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: armed ? colors.badFillArmed : pressed ? colors.secondaryFill : "transparent",
+        backgroundColor: pressed && Platform.OS !== "android" ? colors.secondaryFill : "transparent",
       })}
     >
       {children}
@@ -293,8 +226,9 @@ export function PressableCard({ onPress, label, hint, expanded, style, children 
       accessibilityHint={hint}
       accessibilityState={expanded === undefined ? undefined : { expanded }}
       onPress={onPress}
+      android_ripple={{ color: "rgba(239,240,241,0.10)" }}
       style={({ pressed }) => [
-        { backgroundColor: pressed ? rowPressed : colors.card, borderWidth: 1, borderColor: pressed ? colors.lineStrong : colors.line, borderRadius: radius.md },
+        { backgroundColor: pressed ? rowPressed : colors.card, borderRadius: radius.md, borderCurve: "continuous", overflow: "hidden" },
         style,
       ]}
     >
@@ -327,7 +261,7 @@ export const Hint = ({ children, live }: { children: ReactNode; live?: boolean }
   ) : null;
 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
-  return <View style={[{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md }, style]}>{children}</View>;
+  return <View style={[{ backgroundColor: colors.card, borderRadius: radius.md, borderCurve: "continuous", overflow: "hidden" }, style]}>{children}</View>;
 }
 
 export function Notice({ title, text, onDismiss }: { title: string; text: string; onDismiss: () => void }) {
@@ -374,6 +308,8 @@ export function Field({ label, hideLabel, grow, style, ...rest }: FieldProps) {
         autoCorrect={false}
         spellCheck={false}
         selectionColor={colors.accent}
+        keyboardAppearance="dark"
+        clearButtonMode="while-editing"
         {...rest}
         onFocus={(e) => {
           setFocus(true);
@@ -393,13 +329,66 @@ export function Field({ label, hideLabel, grow, style, ...rest }: FieldProps) {
             color: colors.ink,
             backgroundColor: colors.deep,
             borderWidth: 1,
-            borderColor: focus ? colors.accent : colors.lineStrong,
+            borderColor: focus ? colors.accent : colors.line,
             borderRadius: radius.sm,
+            borderCurve: "continuous",
             outlineStyle: "none",
           } as unknown as TextStyle,
           style,
         ]}
       />
     </View>
+  );
+}
+
+// The platform's search field look: rounded, filled, a magnifier, a clear button, dark keyboard.
+export function SearchField({ label, value, onChangeText, placeholder }: { label: string; value: string; onChangeText: (t: string) => void; placeholder: string }) {
+  return (
+    <View style={{ justifyContent: "center" }}>
+      <TextInput
+        accessibilityLabel={label}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="rgba(156,158,163,0.85)"
+        autoCapitalize="none"
+        autoCorrect={false}
+        spellCheck={false}
+        returnKeyType="search"
+        clearButtonMode="while-editing"
+        keyboardAppearance="dark"
+        selectionColor={colors.accent}
+        style={
+          {
+            height: 40,
+            paddingLeft: 36,
+            paddingRight: 12,
+            paddingVertical: 0,
+            fontFamily: fonts.regular,
+            fontSize: 16,
+            color: colors.ink,
+            backgroundColor: colors.secondaryFill,
+            borderRadius: radius.sm,
+            borderCurve: "continuous",
+            outlineStyle: "none",
+          } as unknown as TextStyle
+        }
+      />
+      <View pointerEvents="none" style={{ position: "absolute", left: 11 }}>
+        <SearchIcon size={16} />
+      </View>
+    </View>
+  );
+}
+
+/** A tailnet's domains on one line: the first two, then "+N more" (a tailnet can own many). */
+export function SuffixLine({ suffixes }: { suffixes: string[] }) {
+  if (suffixes.length === 0) return null;
+  const { shown, more } = capList(suffixes, 2);
+  return (
+    <T v="mono" color={colors.muted} numberOfLines={2}>
+      {shown.map((x) => `*${x}`).join("  ")}
+      {more ? `  ${more}` : ""}
+    </T>
   );
 }

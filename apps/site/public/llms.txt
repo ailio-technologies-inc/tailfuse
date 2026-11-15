@@ -63,6 +63,7 @@ tunnels:
 - `tailfuse env`: print the proxy environment for your shell.
 - `tailfuse tunnel add prod-db --listen 127.0.0.1:5432 --target db.work.ts.net:5432 --profile work`: pin a local port to a tailnet service.
 - `tailfuse serve-pac`: just the PAC URL, for manual browser configuration.
+- `tailfuse phone`: show a QR code that sets up the same tailnets in the phone app (no passwords or keys in it).
 - `tailfuse license activate <key>`: activate a license key.
 - `tailfuse mcp`: run the MCP server on stdio, for Claude and other AI assistants (see below).
 

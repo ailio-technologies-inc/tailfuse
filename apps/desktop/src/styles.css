@@ -215,6 +215,8 @@ code:empty { display: none; }
 .dialog h2 { font-size: 19px; letter-spacing: -0.02em; }
 .dialog p { font-size: var(--t-small); line-height: 1.5; color: var(--muted); }
 .dialog .hint { font-size: var(--t-label); }
+.qr { justify-self: center; box-sizing: border-box; width: 264px; height: 264px; padding: 12px; background: #ffffff; border-radius: 0; }
+.qr svg { display: block; width: 100%; height: 100%; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
 /* the add-a-tailnet card: part of the list, not a loose button */

@@ -167,6 +167,13 @@
           </div>
           <div class="set-row">
             <div class="set-text">
+              <strong>Set up your phone</strong>
+              <span id="phone-text">Show a code to scan with Tailfuse on your iPhone or Android phone. It brings your tailnets across; you sign in to each one on the phone.</span>
+            </div>
+            <button type="button" class="btn btn--secondary btn--sm" id="phone-show">Show code</button>
+          </div>
+          <div class="set-row">
+            <div class="set-text">
               <strong>System proxy</strong>
               <span>For an app that ignores the system setting, give it this address.</span>
             </div>
@@ -206,6 +213,19 @@
         <div class="dialog-actions">
           <button value="later" class="btn btn--secondary btn--sm">Not now</button>
           <button value="ok" class="btn btn--primary btn--sm" autofocus>OK</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="phone" class="dialog" aria-labelledby="phone-title">
+      <form method="dialog" class="dialog-body">
+        <h2 id="phone-title">Scan with your phone</h2>
+        <div class="qr" id="phone-qr" role="img" aria-label="QR code for setting up your tailnets on your phone"></div>
+        <p id="phone-carries"></p>
+        <p class="hint">Open Tailfuse on the phone and choose Sync from your computer, or point the phone's camera at the code.</p>
+        <div class="dialog-actions">
+          <button type="button" class="btn btn--secondary btn--sm" id="phone-copy">Copy link</button>
+          <button value="done" class="btn btn--primary btn--sm" autofocus>Done</button>
         </div>
       </form>
     </dialog>

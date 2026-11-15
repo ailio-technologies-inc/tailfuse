@@ -22,7 +22,8 @@ var (
 
 func get() *engine.Engine {
 	once.Do(func() {
-		eng = engine.New(engine.Options{NodeFactory: engine.TSNetFactory})
+		// Packets: both shells can hand over their tun (all-apps mode).
+		eng = engine.New(engine.Options{NodeFactory: engine.TSNetFactory, Packets: true})
 	})
 	return eng
 }
@@ -70,3 +71,36 @@ func SetDeviceName(name string) { get().SetDeviceName(name) }
 // plain HTTP proxy for all traffic. Never on iOS, where matchDomains already
 // keeps other traffic away from the router. May be called before Start.
 func SetPassthrough(on bool) { get().SetPassthrough(on) }
+
+// StartPackets attaches the phone's tun for all-apps mode, after the shell
+// has applied the all-apps network settings. iOS: fd -1 (the engine finds
+// the packet tunnel's utun fd itself) and utun true; the fd stays the
+// system's. Android: the fd from ParcelFileDescriptor.detachFd() and utun
+// false; the engine owns and closes it. On failure the engine falls back to
+// proxy mode for this session and reports why in state.all_apps_error (the
+// shell then re-applies proxy settings on the "domains" event that follows).
+func StartPackets(fd int, utun bool) error { return get().StartPacketsFD(fd, utun) }
+
+// StopPackets detaches the tun. Call before replacing it (Android
+// re-establish) or before Stop. Safe when none is attached.
+func StopPackets() { get().StopPackets() }
+
+// SetDNSServers gives the engine the underlying (non-VPN) network's DNS
+// servers, one per line ("1.1.1.1", "[2001:db8::1]:53"). Android only: names
+// no tailnet owns are forwarded there. Call at start and on every network
+// change.
+func SetDNSServers(list string) { get().SetDNSServers(list) }
+
+// Protector keeps a socket out of the VPN (Android: VpnService.protect).
+type Protector interface {
+	Protect(fd int) bool
+}
+
+// SetProtector registers the protector (Android only), before Start. Every
+// socket the nodes open, and the upstream DNS sockets, are protected.
+func SetProtector(p Protector) {
+	if p == nil {
+		return
+	}
+	get().SetProtect(p.Protect)
+}

@@ -36,9 +36,13 @@ type Config struct {
 	Hostname string `json:"hostname,omitempty"`
 	// Unlocked: the unlimited-tailnets in-app purchase is recorded. The app
 	// owns the store check; the engine only keeps the flag.
-	Unlocked bool                `json:"unlocked,omitempty"`
-	Profiles map[string]*Profile `json:"profiles"`
-	Tunnels  []Tunnel            `json:"tunnels"`
+	Unlocked bool `json:"unlocked,omitempty"`
+	// ProxyOnly turns all-apps mode off: only apps that follow the system
+	// proxy reach tailnets. All-apps mode is the default, hence the inverse
+	// (a config without the field is on).
+	ProxyOnly bool                `json:"proxy_only,omitempty"`
+	Profiles  map[string]*Profile `json:"profiles"`
+	Tunnels   []Tunnel            `json:"tunnels"`
 }
 
 // Profile is one tailnet.
@@ -55,6 +59,10 @@ type Profile struct {
 	AuthKey string `json:"auth_key,omitempty"`
 	// TailscaleLogs: this tailnet requires Tailscale's own logging.
 	TailscaleLogs bool `json:"tailscale_logs,omitempty"`
+	// SignedOut: set up from a computer's setup code and not signed in yet.
+	// Its node is not started (no memory spent waiting at a login screen)
+	// until login is called for it, or it is switched on.
+	SignedOut bool `json:"signed_out,omitempty"`
 	// Pending: a provisional profile whose sign-in has not finished. It has
 	// no suffixes yet and owns nothing.
 	Pending bool `json:"pending,omitempty"`
@@ -77,7 +85,7 @@ func NewConfig() *Config {
 
 // Clone returns a deep copy.
 func (c *Config) Clone() *Config {
-	out := &Config{Version: c.Version, Hostname: c.Hostname, Unlocked: c.Unlocked, Profiles: make(map[string]*Profile, len(c.Profiles))}
+	out := &Config{Version: c.Version, Hostname: c.Hostname, Unlocked: c.Unlocked, ProxyOnly: c.ProxyOnly, Profiles: make(map[string]*Profile, len(c.Profiles))}
 	for n, p := range c.Profiles {
 		cp := *p
 		cp.Suffixes = append([]string(nil), p.Suffixes...)
@@ -237,7 +245,7 @@ func (c *Config) Owner(host string) string {
 	for _, name := range c.Names() {
 		for _, s := range c.Profiles[name].Suffixes {
 			s = NormalizeSuffix(s)
-			if strings.HasSuffix(host, s) && len(s) > bestLen {
+			if suffixCovers(host, s) && len(s) > bestLen {
 				best, bestLen = name, len(s)
 			}
 		}
@@ -313,4 +321,11 @@ func splitTarget(target string) (string, string, error) {
 		return "", "", fmt.Errorf("target %q has no valid port", target)
 	}
 	return host, port, nil
+}
+
+// suffixCovers: host is under suffix s (".example.com"). A domain added with
+// add_domain also covers its bare name ("example.com"); a ts.net suffix does
+// not (the bare MagicDNS name is no device).
+func suffixCovers(host, s string) bool {
+	return strings.HasSuffix(host, s) || (len(s) > 1 && host == s[1:] && !strings.HasSuffix(s, ".ts.net"))
 }

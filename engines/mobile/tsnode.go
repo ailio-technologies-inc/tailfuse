@@ -5,13 +5,13 @@ import (
 	"errors"
 	"net"
 	"net/netip"
-	"sort"
 	"strings"
 	"sync"
 
 	"golang.org/x/net/dns/dnsmessage"
 	"tailscale.com/client/local"
 	"tailscale.com/envknob"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
 )
 
@@ -60,6 +60,8 @@ func (n *tsNode) Start() error {
 		// Backend logs go only to tsnet's own (local, size-capped) buffer and,
 		// when allowed, its uploader; UserLogf gets tsnet's few user messages.
 		UserLogf: func(format string, args ...any) { logf("["+n.opts.Name+"] "+format, args...) },
+		// All-apps mode only; nil keeps tsnet's own netstack-only device.
+		Tun: n.opts.Tun,
 	}
 	if err := s.Start(); err != nil {
 		return err
@@ -113,6 +115,16 @@ func (n *tsNode) Dial(ctx context.Context, network, address string) (net.Conn, e
 		}
 	}
 	return s.Dial(ctx, network, address)
+}
+
+// QueryDNS asks the tailnet's own resolver (the node's 100.100.100.100).
+func (n *tsNode) QueryDNS(ctx context.Context, name, qtype string) ([]byte, error) {
+	_, lc, err := n.get()
+	if err != nil {
+		return nil, err
+	}
+	raw, _, err := lc.QueryDNS(ctx, strings.TrimSuffix(name, ".")+".", qtype)
+	return raw, err
 }
 
 // tailnetLookup asks the node's resolver (100.100.100.100) for host.
@@ -206,15 +218,21 @@ func (n *tsNode) Devices(ctx context.Context) ([]Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := []Device{}
-	for _, p := range st.Peer {
-		d := Device{Name: p.HostName, DNSName: strings.TrimSuffix(p.DNSName, "."), OS: p.OS, Online: p.Online, IPs: []string{}}
+	out := make([]Device, 0, len(st.Peer)+1)
+	add := func(p *ipnstate.PeerStatus, self bool) {
+		d := Device{Name: p.HostName, DNSName: strings.TrimSuffix(p.DNSName, "."), OS: p.OS, Online: p.Online || self, Self: self}
+		d.IPs = make([]string, 0, len(p.TailscaleIPs))
 		for _, ip := range p.TailscaleIPs {
 			d.IPs = append(d.IPs, ip.String())
 		}
 		out = append(out, d)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].DNSName < out[j].DNSName })
+	if st.Self != nil {
+		add(st.Self, true)
+	}
+	for _, p := range st.Peer {
+		add(p, false)
+	}
 	return out, nil
 }
 

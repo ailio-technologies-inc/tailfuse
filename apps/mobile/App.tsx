@@ -3,33 +3,38 @@ import { JetBrainsMono_400Regular } from "@expo-google-fonts/jetbrains-mono";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import * as Linking from "expo-linking";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button, GearIcon, IconButton, Mark, Notice, PortIcon, PressableCard, SearchIcon, Switch, T } from "./src/components";
-import { atLimit, statusLine } from "./src/logic";
+import * as haptics from "./src/haptics";
+import { addNeedsUpgrade, findSyncLink, statusLine, type UpgradeResume } from "./src/logic";
 import { deviceWord } from "./src/platform";
 import { preview } from "./src/preview";
 import { Sheet } from "./src/Sheet";
 import { AboutSection, SettingsSection } from "./src/SettingsSections";
+import { SyncSheet } from "./src/SyncSheet";
 import { TailnetSheet } from "./src/TailnetSheet";
 import { EmptyState, TailnetsSection } from "./src/TailnetsSection";
 import { colors, MAX_W } from "./src/theme";
 import { CheckSheet, PortsSheet } from "./src/ToolsSections";
 import { UnlockSection } from "./src/UnlockSection";
+import { UpgradeSheet } from "./src/UpgradeSheet";
 import { useTailfuse } from "./src/useTailfuse";
 import { useUnlock } from "./src/useUnlock";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-type SheetKind = "settings" | "check" | "ports" | "tailnet" | null;
+type SheetKind = "settings" | "check" | "ports" | "tailnet" | "sync" | "upgrade" | null;
 
 const initialSheet = (): SheetKind => {
   const s = preview.sheet;
-  if (s === "settings" || s === "check" || s === "ports") return s;
+  if (s === "settings" || s === "check" || s === "ports" || s === "upgrade") return s;
+  if (s === "sync" || s === "sync-confirm" || s === "sync-done") return "sync";
   if (s === "ports-form") return "ports";
-  if (s === "tailnet" || (s && !["permission", "empty"].includes(s))) return "tailnet";
+  if (s === "tailnet" || (s && !["permission", "empty", "upgrade"].includes(s))) return "tailnet";
   return null;
 };
 
@@ -40,16 +45,37 @@ const Column = ({ children, side = 20 }: { children: ReactNode; side?: number })
 
 function Screen() {
   const insets = useSafeAreaInsets();
-  const tf = useTailfuse();
+  const [sheet, setSheet] = useState<SheetKind>(initialSheet);
+  // What the person was doing when the free limit stopped them; the upgrade modal carries on with it.
+  const [resume, setResume] = useState<UpgradeResume>(null);
+  const openUpgrade = useRef((r: UpgradeResume) => {
+    setResume(r);
+    setSheet("upgrade");
+  });
+  const tf = useTailfuse((r) => openUpgrade.current(r));
   const s = tf.state;
   const device = deviceWord();
   const unlock = useUnlock(tf.refresh);
-  const [sheet, setSheet] = useState<SheetKind>(initialSheet);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const [previewPermission, setPreviewPermission] = useState(preview.sheet === "permission");
 
+  const [syncLink, setSyncLink] = useState<string | null>(null);
   const close = useCallback(() => setSheet(null), []);
+
+  // tailfuse://sync?... from the phone's camera or a tapped link, cold start or while running: open the
+  // Sync sheet at its confirmation. Nothing is added until the person confirms.
+  useEffect(() => {
+    const take = (url: string | null) => {
+      const link = url ? findSyncLink(url) : null;
+      if (!link) return;
+      setSyncLink(link);
+      setSheet("sync");
+    };
+    Linking.getInitialURL().then(take).catch(() => {});
+    const sub = Linking.addEventListener("url", ({ url }) => take(url));
+    return () => sub.remove();
+  }, []);
   const pull = async () => {
     setRefreshing(true);
     await tf.refresh();
@@ -67,10 +93,42 @@ function Screen() {
   // Only one sheet at a time: the permission sheet takes over while it is asking.
   const open = (k: Exclude<SheetKind, null>) => !permissionOpen && sheet === k;
 
-  const add = () => {
-    if (s && atLimit(s)) setSheet("settings"); // the unlock section is at its top
-    else tf.addTailnet();
+  const add = useCallback(() => {
+    if (s && addNeedsUpgrade(s)) openUpgrade.current("add");
+    else void tf.addTailnet();
+  }, [s, tf]);
+
+  // The unlock is held: close the modal and carry on with what the person started.
+  const finishUpgrade = useCallback(() => {
+    haptics.success();
+    unlock.clearNote();
+    if (resume === "sync") setSheet("sync");
+    else {
+      setSheet(null);
+      if (resume === "add") void tf.addTailnet();
+    }
+    setResume(null);
+  }, [resume, tf, unlock]);
+  const buy = async () => {
+    if (await unlock.unlock()) finishUpgrade();
   };
+  const restore = async () => {
+    if (await unlock.restore()) finishUpgrade();
+  };
+  // An approval that lands while the modal is open (Ask to Buy) closes it; the person taps Add again.
+  const owned = !!s?.unlocked;
+  const [wasOwned, setWasOwned] = useState(owned);
+  if (wasOwned !== owned) {
+    setWasOwned(owned);
+    if (owned && sheet === "upgrade") {
+      setSheet(null);
+      setResume(null);
+    }
+  }
+  const openTailnet = useCallback((name: string) => {
+    setSelected(name);
+    setSheet("tailnet");
+  }, []);
 
   return (
     <View style={styles.root}>
@@ -109,7 +167,7 @@ function Screen() {
             {tf.error ? <Notice title={tf.error.title} text={tf.error.text} onDismiss={tf.dismissError} /> : null}
 
             {s && s.profiles.length === 0 ? (
-              <EmptyState busy={tf.signingIn !== null} message={tf.message} onAdd={add} />
+              <EmptyState busy={tf.signingIn !== null} message={tf.message} onAdd={add} onSync={() => setSheet("sync")} />
             ) : null}
 
             {s && s.profiles.length > 0 ? (
@@ -120,10 +178,7 @@ function Screen() {
                   signingIn={tf.signingIn}
                   message={tf.message}
                   onAdd={add}
-                  onOpen={(name) => {
-                    setSelected(name);
-                    setSheet("tailnet");
-                  }}
+                  onOpen={openTailnet}
                   onSignIn={tf.signInTo}
                   onToggle={tf.setConnected}
                 />
@@ -167,6 +222,36 @@ function Screen() {
         }}
       />
 
+      <SyncSheet
+        visible={open("sync")}
+        link={syncLink}
+        onClose={() => {
+          setSyncLink(null);
+          close();
+        }}
+        onImported={() => void tf.refresh()}
+        onUnlock={(link) => {
+          setSyncLink(link || null);
+          openUpgrade.current("sync");
+        }}
+      />
+
+      <UpgradeSheet
+        visible={open("upgrade")}
+        price={unlock.price}
+        busy={unlock.busy}
+        note={unlock.note}
+        onUnlock={() => void buy()}
+        onRestore={() => void restore()}
+        onClose={() => {
+          unlock.clearNote();
+          // Backing out of a sync's unlock returns to its confirmation.
+          if (resume === "sync") setSheet("sync");
+          else close();
+          setResume(null);
+        }}
+      />
+
       <CheckSheet visible={open("check")} onClose={close} />
 
       <PortsSheet
@@ -182,7 +267,14 @@ function Screen() {
       <Sheet visible={open("settings")} onClose={close} title="Settings" tall>
         <View style={{ gap: 24 }}>
           <UnlockSection owned={!!s?.unlocked} price={unlock.price} busy={unlock.busy} note={unlock.note} onUnlock={unlock.unlock} onRestore={unlock.restore} />
-          <SettingsSection proxy={s?.proxy ?? ""} onError={tf.showError} />
+          <SettingsSection
+            proxy={s?.proxy ?? ""}
+            allApps={s?.all_apps}
+            allAppsError={s?.all_apps_error}
+            onError={tf.showError}
+            onSync={() => setSheet("sync")}
+            onChanged={() => void tf.refresh()}
+          />
           <AboutSection />
         </View>
       </Sheet>

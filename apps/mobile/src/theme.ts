@@ -14,6 +14,7 @@ export const colors = {
   line: "rgba(239,240,241,0.11)",
   lineStrong: "rgba(239,240,241,0.20)",
   secondaryFill: "rgba(239,240,241,0.08)",
+  switchOff: "#3a3c40",
   badTint: "rgba(255,138,107,0.09)",
   badBorder: "rgba(255,138,107,0.45)",
   badFillArmed: "rgba(255,138,107,0.12)",
@@ -22,7 +23,8 @@ export const colors = {
   backdrop: "rgba(8,9,10,0.6)",
 } as const;
 
-export const radius = { sm: 2, md: 0, lg: 0, pill: 999 } as const;
+// Platform-style continuous corners (the desktop's sharp corners fight the phone).
+export const radius = { sm: 10, md: 12, lg: 16, pill: 999 } as const;
 
 export const fonts = {
   regular: "HostGrotesk_400Regular",

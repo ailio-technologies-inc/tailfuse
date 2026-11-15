@@ -7,3 +7,10 @@ rust = { version = "1.96.0", components = "clippy,rustfmt" }
 go = "1.27.4"      # engines/mobile/go.mod
 node = "22"        # what release.yml builds the app with
 "aqua:moonrepo/moon" = "2.6.5"
+java = "temurin-17"
+
+[env]
+ANDROID_HOME = "{{env.HOME}}/Library/Android/sdk"
+ANDROID_SDK_ROOT = "{{env.HOME}}/Library/Android/sdk"
+ANDROID_NDK_HOME = "{{env.HOME}}/Library/Android/sdk/ndk/27.1.12297006"
+_.path = ["{{env.HOME}}/Library/Android/sdk/cmdline-tools/latest/bin", "{{env.HOME}}/Library/Android/sdk/platform-tools"]
