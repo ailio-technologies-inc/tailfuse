@@ -1,5 +1,10 @@
 name: CI
 
+# Pushes to main: the cluster runs the Linux work (infra's ci-tailfuse and ci-tailfuse-android DAGs,
+# docs/agents/tailfuse-ci.md there) with the same moon targets, reported as the commit statuses
+# cluster/ci and cluster/ci/android. So the Linux jobs here run for pull requests only, which the
+# cluster does not see. macOS and Windows always run here: no cluster host runs either.
+
 on:
   push:
     branches: [main]
@@ -12,7 +17,8 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # Linux only for pull requests; the cluster covers it on main.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-latest","ubuntu-latest","windows-latest"]' || '["macos-latest","windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +60,7 @@ jobs:
       - run: moon run desktop:check
 
   app-linux:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +83,7 @@ jobs:
 
   # The site and the phone apps' checks (the engine bindings are not built in CI).
   site-mobile:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +106,7 @@ jobs:
   # runner's preinstalled SDK is found through ANDROID_HOME (mise.toml keeps it when set); the
   # pinned packages are the ones apps/mobile/README.md lists.
   android:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -132,3 +141,8 @@ jobs:
       - name: Debug APK (arm64)
         run: ./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
         working-directory: apps/mobile/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tailfuse-debug-arm64
+          path: apps/mobile/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7

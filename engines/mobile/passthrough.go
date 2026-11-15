@@ -2,11 +2,14 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
 	"strconv"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -91,6 +94,34 @@ func (r *Router) open(host, port string) (net.Conn, *openErr) {
 	return up, nil
 }
 
+// withOtherFamily adds what a second lookup finds when the first returned
+// only one address family: some resolvers answer a dual-stack name with just
+// the AAAA records, and a network without IPv6 then has nothing to connect to.
+func (r *Router) withOtherFamily(host string, addrs []netip.Addr) []netip.Addr {
+	has4, has6 := false, false
+	for _, a := range addrs {
+		if a.Unmap().Is4() {
+			has4 = true
+		} else {
+			has6 = true
+		}
+	}
+	if has4 && has6 {
+		return addrs
+	}
+	network := "ip4"
+	if has4 {
+		network = "ip6"
+	}
+	ctx, cancel := context.WithTimeout(r.ctx, 3*time.Second)
+	defer cancel()
+	more, err := r.resolver().LookupNetIP(ctx, network, host)
+	if err != nil {
+		return addrs
+	}
+	return append(addrs, more...)
+}
+
 // directTargets checks a name nothing routes and returns the addresses it
 // may be dialed at directly.
 func (r *Router) directTargets(host, portStr string) ([]netip.AddrPort, *openErr) {
@@ -115,6 +146,7 @@ func (r *Router) directTargets(host, portStr string) ([]netip.AddrPort, *openErr
 		if err != nil || len(addrs) == 0 {
 			return nil, &openErr{status: http.StatusBadGateway, socks: socksHostUnreachable, msg: "could not resolve " + host}
 		}
+		addrs = r.withOtherFamily(host, addrs)
 	}
 	var ok []netip.AddrPort
 	local := false
@@ -175,26 +207,131 @@ func (r *Router) resolver() Resolver {
 	return net.DefaultResolver
 }
 
-// dialDirect tries each address in turn, sharing the dial timeout.
+// eyeballsDelay is how long a dial attempt runs alone before the next
+// address (the other family first) starts beside it (RFC 8305: 250 ms).
+const eyeballsDelay = 250 * time.Millisecond
+
+// directProtect, when set (Android, by SetProtect), keeps the passthrough
+// sockets out of the VPN, whatever routes it claims.
+var directProtect atomic.Pointer[func(fd int) bool]
+
+// directDialer dials a pre-resolved address: protected on Android.
+func directDialer(ctx context.Context, network, addr string) (net.Conn, error) {
+	d := net.Dialer{KeepAlive: 30 * time.Second}
+	if p := directProtect.Load(); p != nil {
+		protect := *p
+		d.Control = func(_, _ string, c syscall.RawConn) error {
+			ok := false
+			if err := c.Control(func(fd uintptr) { ok = protect(int(fd)) }); err != nil {
+				return err
+			}
+			if !ok {
+				return errors.New("could not protect the socket from the vpn")
+			}
+			return nil
+		}
+	}
+	return d.DialContext(ctx, network, addr)
+}
+
+// interleave orders addresses the way Happy Eyeballs tries them: the first
+// address's family first, then alternating, each family in resolver order.
+func interleave(targets []netip.AddrPort) []netip.AddrPort {
+	var a, b []netip.AddrPort
+	for _, t := range targets {
+		if len(targets) > 0 && t.Addr().Is6() == targets[0].Addr().Is6() {
+			a = append(a, t)
+		} else {
+			b = append(b, t)
+		}
+	}
+	out := make([]netip.AddrPort, 0, len(targets))
+	for len(a) > 0 || len(b) > 0 {
+		if len(a) > 0 {
+			out = append(out, a[0])
+			a = a[1:]
+		}
+		if len(b) > 0 {
+			out = append(out, b[0])
+			b = b[1:]
+		}
+	}
+	return out
+}
+
+// dialDirect connects to the first address that answers, Happy Eyeballs
+// style: addresses alternate between families, the next starts when the
+// previous fails or after eyeballsDelay, and the rest are cancelled once one
+// connects. An unreachable IPv6 therefore costs at most one quick failure
+// before IPv4 is tried.
 func (r *Router) dialDirect(targets []netip.AddrPort) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(r.ctx, dialTimeout)
 	defer cancel()
-	d := net.Dialer{KeepAlive: 30 * time.Second}
-	var last error
-	for i, ap := range targets {
-		actx := ctx
-		if left := len(targets) - i; left > 1 {
-			if dl, ok := ctx.Deadline(); ok {
-				var c context.CancelFunc
-				actx, c = context.WithTimeout(ctx, time.Until(dl)/time.Duration(left))
-				defer c()
+	dial := r.directDial
+	if dial == nil {
+		dial = directDialer
+	}
+	targets = interleave(targets)
+	type result struct {
+		conn net.Conn
+		err  error
+		ap   netip.AddrPort
+	}
+	results := make(chan result, len(targets))
+	attempt := func(ap netip.AddrPort) {
+		c, err := dial(ctx, "tcp", ap.String())
+		results <- result{c, err, ap}
+	}
+	var (
+		started, finished int
+		last              error
+	)
+	start := func() {
+		go attempt(targets[started])
+		started++
+	}
+	start()
+	timer := time.NewTimer(eyeballsDelay)
+	defer timer.Stop()
+	for finished < started || started < len(targets) {
+		select {
+		case res := <-results:
+			finished++
+			if res.err == nil {
+				cancel()
+				go func() { // losers that connect anyway are closed
+					for ; finished < started; finished++ {
+						if lr := <-results; lr.conn != nil {
+							lr.conn.Close()
+						}
+					}
+				}()
+				return res.conn, nil
 			}
+			r.logf("router: dial %s: %v", res.ap, res.err)
+			last = res.err
+			if started < len(targets) {
+				start()
+				resetTimer(timer, eyeballsDelay)
+			}
+		case <-timer.C:
+			if started < len(targets) {
+				start()
+				timer.Reset(eyeballsDelay)
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
-		conn, err := d.DialContext(actx, "tcp", ap.String())
-		if err == nil {
-			return conn, nil
-		}
-		last = err
 	}
 	return nil, last
+}
+
+func resetTimer(t *time.Timer, d time.Duration) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+	t.Reset(d)
 }

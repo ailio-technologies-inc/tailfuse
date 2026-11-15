@@ -4,8 +4,9 @@ import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
+import * as NavigationBar from "expo-navigation-bar";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button, GearIcon, IconButton, Mark, Notice, PortIcon, PressableCard, SearchIcon, Switch, T } from "./src/components";
@@ -304,6 +305,10 @@ function Screen() {
 export default function App() {
   const [loaded, failed] = useFonts({ HostGrotesk_400Regular, HostGrotesk_500Medium, JetBrainsMono_400Regular });
   const ready = loaded || !!failed;
+  // The app is always dark; a phone in light mode would otherwise draw dark navigation buttons on it.
+  useEffect(() => {
+    if (Platform.OS === "android") NavigationBar.setStyle("light");
+  }, []);
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);

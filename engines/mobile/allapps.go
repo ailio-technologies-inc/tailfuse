@@ -295,6 +295,7 @@ func (e *Engine) SetProtect(protect func(fd int) bool) {
 		return
 	}
 	setSocketProtector(protect)
+	directProtect.Store(&protect)
 	d := &net.Dialer{Timeout: 5 * time.Second, Control: func(_, _ string, c syscall.RawConn) error {
 		ok := false
 		if err := c.Control(func(fd uintptr) { ok = protect(int(fd)) }); err != nil {

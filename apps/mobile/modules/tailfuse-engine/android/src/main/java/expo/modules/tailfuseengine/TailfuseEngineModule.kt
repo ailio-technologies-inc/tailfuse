@@ -65,7 +65,7 @@ class TailfuseEngineModule : Module() {
     }
 
     AsyncFunction("stop") Coroutine { ->
-      withContext(Dispatchers.IO) { TailfuseVpnService.stop() }
+      withContext(Dispatchers.IO) { TailfuseVpnService.stop(context) }
     }
 
     AsyncFunction("isUp") { -> Tfmobile.running() }
