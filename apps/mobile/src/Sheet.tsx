@@ -3,7 +3,8 @@
 // dimming, detents, swipe to dismiss and keyboard handling. Sheet.web.tsx is the browser preview's stand-in.
 import { TrueSheet } from "@lodev09/react-native-true-sheet";
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
-import { ScrollView, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CloseIcon, IconButton, T } from "./components";
 import { colors } from "./theme";
@@ -29,6 +30,10 @@ type Props = {
 };
 
 export function Sheet({ visible, onClose, title, subtitle, tall, list, children }: Props) {
+  // Android draws the sheet edge to edge, and a sheet that fits its content does not scroll, so nothing
+  // insets it: with button navigation the last control sat under the bar. Pad for the bar ourselves there.
+  const insets = useSafeAreaInsets();
+  const padForBar = Platform.OS === "android" && !list;
   const sheet = useRef<TrueSheet>(null);
   const scroll = useRef<any>(null);
   const shown = useRef(false);
@@ -59,6 +64,7 @@ export function Sheet({ visible, onClose, title, subtitle, tall, list, children 
       backgroundColor={colors.card}
       grabber
       scrollableRef={scroll}
+      scrollableOptions={padForBar ? { contentInsetAdjustment: "never" } : undefined}
       onDidDismiss={() => {
         const wasShown = shown.current;
         shown.current = false;
@@ -83,7 +89,7 @@ export function Sheet({ visible, onClose, title, subtitle, tall, list, children 
       <ScrollView
         ref={scroll}
         nestedScrollEnabled
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 28, gap: 16 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 28 + (padForBar ? insets.bottom : 0), gap: 16 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         showsVerticalScrollIndicator={false}
