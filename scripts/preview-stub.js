@@ -1,7 +1,7 @@
 // Stand-in for the Tauri app, used only when index.html is opened from a local dev server to look
 // at the design in a browser (see main.js). Add ?empty or ?off to the address for those states, or ?shot for the
 // clean, licensed state the README and tailfuse.com screenshots are taken from (scripts/screenshots.sh).
-// Tracked here; copy it to app/src/preview-stub.js (git-ignored, so it never ships) to preview the UI locally.
+// Tracked here; copy it to apps/desktop/src/preview-stub.js (git-ignored, so it never ships) to preview the UI locally.
 const q = new URLSearchParams(location.search);
 const shot = q.has("shot");
 const state = shot ? {

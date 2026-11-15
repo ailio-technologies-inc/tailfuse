@@ -1,0 +1,5 @@
+$schema: 'https://moonrepo.dev/schemas/toolchains.json'
+
+# mise (mise.toml) pins and installs rust, go and node. No `version` is set on
+# any toolchain here, so moon downloads nothing and runs the tools from PATH.
+rust: {}

@@ -56,7 +56,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           case "$VERSION" in [0-9]*.[0-9]*.[0-9]*) ;; *) VERSION=0.0.0 ;; esac
-          cd app
+          cd apps/desktop
           npm ci
           # No Developer ID certificate here: sign ad hoc. The cluster's release lane (infra:
           # host/tailfuse-notarize) takes the .app.tar.gz, signs it with the Developer ID,
@@ -64,8 +64,8 @@ jobs:
           # this ad-hoc dmg and the unsigned .app.tar.gz from the release. It also signs the
           # macOS updater bundle and writes latest.json, the feed the app updates from.
           npx tauri build --target universal-apple-darwin --bundles app,dmg --config "{\"version\":\"$VERSION\",\"bundle\":{\"macOS\":{\"signingIdentity\":\"-\"}}}"
-          cp ../target/universal-apple-darwin/release/bundle/dmg/*.dmg "../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-macos-universal.dmg"
-          COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-macos-universal-unsigned.app.tar.gz" -C ../target/universal-apple-darwin/release/bundle/macos Tailfuse.app
+          cp ../../target/universal-apple-darwin/release/bundle/dmg/*.dmg "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-macos-universal.dmg"
+          COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-macos-universal-unsigned.app.tar.gz" -C ../../target/universal-apple-darwin/release/bundle/macos Tailfuse.app
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -121,11 +121,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           case "$VERSION" in [0-9]*.[0-9]*.[0-9]*) ;; *) VERSION=0.0.0 ;; esac
-          cd app
+          cd apps/desktop
           npm ci
           npx tauri build --bundles nsis --config "{\"version\":\"$VERSION\"}"
-          cp ../target/release/bundle/nsis/*-setup.exe "../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-windows-x86_64-setup.exe"
-          cp ../target/release/bundle/nsis/*-setup.exe.sig "../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-windows-x86_64-setup.exe.sig"
+          cp ../../target/release/bundle/nsis/*-setup.exe "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-windows-x86_64-setup.exe"
+          cp ../../target/release/bundle/nsis/*-setup.exe.sig "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-windows-x86_64-setup.exe.sig"
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -175,13 +175,13 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           case "$VERSION" in [0-9]*.[0-9]*.[0-9]*) ;; *) VERSION=0.0.0 ;; esac
-          cd app
+          cd apps/desktop
           npm ci
           npx tauri build --bundles appimage,deb --config "{\"version\":\"$VERSION\"}"
           mkdir -p ../dist
-          cp ../target/release/bundle/appimage/*.AppImage "../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-linux-amd64.AppImage"
-          cp ../target/release/bundle/appimage/*.AppImage.sig "../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-linux-amd64.AppImage.sig"
-          cp ../target/release/bundle/deb/*.deb "../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-linux-amd64.deb"
+          cp ../../target/release/bundle/appimage/*.AppImage "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-linux-amd64.AppImage"
+          cp ../../target/release/bundle/appimage/*.AppImage.sig "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-linux-amd64.AppImage.sig"
+          cp ../../target/release/bundle/deb/*.deb "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-linux-amd64.deb"
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:

@@ -1,0 +1,196 @@
+{
+  "_comment": "Routing vectors shared by the desktop (Rust, crates/tailfuse-core) and mobile (Go, engines/mobile) cores. Built from config.rs, router.rs and daemon.rs test cases plus edge cases. owner null = refused.",
+  "owner_scenarios": [
+    {
+      "name": "config.rs owner_longest_suffix",
+      "profiles": {
+        "personal": [".home-lab.ts.net"],
+        "work": [".work.ts.net", ".internal.example"]
+      },
+      "steps": [
+        {
+          "cases": [
+            {"host": "nas.home-lab.ts.net", "owner": "personal"},
+            {"host": "db.work.ts.net", "owner": "work"},
+            {"host": "vault.internal.example", "owner": "work"},
+            {"host": "example.com", "owner": null},
+            {"host": "NAS.Home-Lab.TS.net.", "owner": "personal"},
+            {"host": "work.ts.net", "owner": null},
+            {"host": "evil-work.ts.net", "owner": null},
+            {"host": "work.ts.net.evil.com", "owner": null},
+            {"host": "", "owner": null}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nested suffixes: longest wins",
+      "profiles": {
+        "wide": [".ts.net"],
+        "work": [".work.ts.net"]
+      },
+      "steps": [
+        {
+          "cases": [
+            {"host": "db.work.ts.net", "owner": "work"},
+            {"host": "nas.other.ts.net", "owner": "wide"},
+            {"host": "a.b.work.ts.net", "owner": "work"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "router.rs learned_domains_and_addresses_route_only_when_unambiguous",
+      "profiles": {
+        "work": [".work.ts.net"],
+        "ailio": [],
+        "change": []
+      },
+      "steps": [
+        {
+          "learn": [
+            {"profile": "ailio", "ips": ["100.74.194.18", "100.70.0.9"], "domains": ["ailio.dev"]},
+            {"profile": "change", "ips": ["100.70.0.9"], "domains": []}
+          ],
+          "cases": [
+            {"host": "ailio.dev", "owner": "ailio"},
+            {"host": "litellm.ailio.dev", "owner": "ailio"},
+            {"host": "notailio.dev", "owner": null},
+            {"host": "db.work.ts.net", "owner": "work"},
+            {"host": "100.74.194.18", "owner": "ailio"},
+            {"host": "100.70.0.9", "owner": null}
+          ],
+          "extras": {"domains": ["ailio.dev"], "hosts": [], "ips": ["100.74.194.18"]}
+        },
+        {
+          "learn": [{"profile": "ailio", "ips": [], "domains": []}],
+          "cases": [
+            {"host": "ailio.dev", "owner": null},
+            {"host": "100.70.0.9", "owner": "change"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "learned domain shared by two tailnets is refused; configured suffix still wins",
+      "profiles": {
+        "a": [".a.ts.net"],
+        "b": [".b.ts.net"]
+      },
+      "steps": [
+        {
+          "learn": [
+            {"profile": "a", "ips": [], "domains": ["corp.example", "x.a.ts.net"]},
+            {"profile": "b", "ips": [], "domains": ["corp.example", "deep.corp.example"]}
+          ],
+          "cases": [
+            {"host": "wiki.corp.example", "owner": null},
+            {"host": "y.deep.corp.example", "owner": "b"},
+            {"host": "x.a.ts.net", "owner": "a"}
+          ],
+          "extras": {"domains": ["deep.corp.example", "x.a.ts.net"], "hosts": [], "ips": []}
+        }
+      ]
+    },
+    {
+      "name": "custom domains resolving to one tailnet's device are remembered, re-checked and forgotten",
+      "profiles": {
+        "ailio": [".ailio.ts.net"],
+        "change": [".change.ts.net"]
+      },
+      "steps": [
+        {
+          "learn": [
+            {"profile": "ailio", "ips": ["100.74.194.18", "fd7a:115c:a1e0::1"], "domains": []},
+            {"profile": "change", "ips": ["100.70.0.9", "100.80.0.1"], "domains": []}
+          ],
+          "dns": {
+            "app.example.com": ["100.74.194.18"],
+            "v6.example.com": ["fd7a:115c:a1e0::1"],
+            "both.example.com": ["100.74.194.18", "104.21.71.112"],
+            "split.example.com": ["100.74.194.18", "100.70.0.9"],
+            "unknown.example.com": ["100.74.194.18", "100.99.0.1"],
+            "public.example.com": ["104.21.71.112"]
+          },
+          "cases": [
+            {"host": "app.example.com", "owner": null},
+            {"host": "app.example.com", "owner": "ailio", "resolve": true},
+            {"host": "app.example.com", "owner": "ailio"},
+            {"host": "v6.example.com", "owner": "ailio", "resolve": true},
+            {"host": "both.example.com", "owner": "ailio", "resolve": true},
+            {"host": "split.example.com", "owner": null, "resolve": true},
+            {"host": "unknown.example.com", "owner": null, "resolve": true},
+            {"host": "public.example.com", "owner": null, "resolve": true},
+            {"host": "nowhere.example.com", "owner": null, "resolve": true},
+            {"host": "100.99.0.1", "owner": null, "resolve": true},
+            {"host": "[fd7a:115c:a1e0::1]", "owner": "ailio"}
+          ],
+          "extras": {"domains": [], "hosts": ["app.example.com", "both.example.com", "v6.example.com"], "ips": ["100.70.0.9", "100.74.194.18", "100.80.0.1", "fd7a:115c:a1e0::1"]}
+        },
+        {
+          "dns": {"app.example.com": ["100.70.0.9"]},
+          "recheck": true,
+          "cases": [
+            {"host": "app.example.com", "owner": null},
+            {"host": "v6.example.com", "owner": "ailio"}
+          ],
+          "extras": {"domains": [], "hosts": ["both.example.com", "v6.example.com"], "ips": ["100.70.0.9", "100.74.194.18", "100.80.0.1", "fd7a:115c:a1e0::1"]}
+        }
+      ]
+    },
+    {
+      "name": "nothing learned: no lookup at all",
+      "profiles": {"work": [".work.ts.net"]},
+      "steps": [
+        {
+          "dns": {"app.example.com": ["100.74.194.18"]},
+          "cases": [{"host": "app.example.com", "owner": null, "resolve": true}]
+        }
+      ]
+    }
+  ],
+  "tailscale_ip": [
+    {"ip": "100.64.0.1", "want": true},
+    {"ip": "100.127.255.254", "want": true},
+    {"ip": "100.128.0.1", "want": false},
+    {"ip": "100.63.255.255", "want": false},
+    {"ip": "104.21.71.112", "want": false},
+    {"ip": "fd7a:115c:a1e0::1", "want": true},
+    {"ip": "fd7a:115c:a1e1::1", "want": false}
+  ],
+  "served_domains": [
+    {
+      "name": "daemon.rs domains_skip_ts_net_and_keep_split_and_search",
+      "routes": ["ts.net.", "ailio.dev."],
+      "search": ["tail8e2dc7.ts.net", "corp.example"],
+      "want": ["ailio.dev", "tail8e2dc7.ts.net", "corp.example"]
+    },
+    {
+      "name": "single labels and duplicates dropped",
+      "routes": ["corp.", "Example.COM."],
+      "search": ["example.com", "lan"],
+      "want": ["example.com"]
+    }
+  ],
+  "validate": [
+    {"name": "ok", "profiles": {"personal": {"suffixes": [".home-lab.ts.net"]}, "work": {"suffixes": [".work.ts.net", ".internal.example"]}}, "error": ""},
+    {"name": "config.rs rejects_overlap", "profiles": {"work": {"suffixes": [".work.ts.net"]}, "evil": {"suffixes": [".work.ts.net"]}}, "error": "owned by both"},
+    {"name": "overlap after normalising", "profiles": {"work": {"suffixes": [".work.ts.net"]}, "evil": {"suffixes": ["  .WORK.ts.net "]}}, "error": "owned by both"},
+    {"name": "same suffix twice in one profile", "profiles": {"work": {"suffixes": [".work.ts.net", ".work.ts.net"]}}, "error": "owned by both"},
+    {"name": "nesting is allowed", "profiles": {"wide": {"suffixes": [".ts.net"]}, "work": {"suffixes": [".work.ts.net"]}}, "error": ""},
+    {"name": "no suffix", "profiles": {"work": {"suffixes": []}}, "error": "needs at least one suffix"},
+    {"name": "pending profile needs no suffix", "profiles": {"new-tailnet": {"suffixes": [], "pending": true}}, "error": ""},
+    {"name": "empty suffix", "profiles": {"work": {"suffixes": ["  "]}}, "error": "empty suffix"},
+    {"name": "no leading dot", "profiles": {"work": {"suffixes": ["work.ts.net"]}}, "error": "must start with '.'"},
+    {"name": "bare dot", "profiles": {"work": {"suffixes": ["."]}}, "error": "names no domain"},
+    {"name": "bad name", "profiles": {"Work Net": {"suffixes": [".work.ts.net"]}}, "error": "not valid"},
+    {"name": "no profiles is fine on mobile", "profiles": {}, "error": ""},
+    {"name": "tunnel ok", "profiles": {"work": {"suffixes": [".work.ts.net"]}}, "tunnels": [{"name": "db", "listen": "127.0.0.1:5432", "target": "db.work.ts.net:5432", "profile": "work"}], "error": ""},
+    {"name": "tunnel missing field", "profiles": {"work": {"suffixes": [".work.ts.net"]}}, "tunnels": [{"name": "db", "listen": "", "target": "db.work.ts.net:5432", "profile": "work"}], "error": "needs name, profile, listen and target"},
+    {"name": "tunnel duplicate name", "profiles": {"work": {"suffixes": [".work.ts.net"]}}, "tunnels": [{"name": "db", "listen": "127.0.0.1:5432", "target": "db.work.ts.net:5432", "profile": "work"}, {"name": "db", "listen": "127.0.0.1:5433", "target": "db.work.ts.net:5432", "profile": "work"}], "error": "duplicate local port name"},
+    {"name": "tunnel unknown profile", "profiles": {"work": {"suffixes": [".work.ts.net"]}}, "tunnels": [{"name": "db", "listen": "127.0.0.1:5432", "target": "db.work.ts.net:5432", "profile": "home"}], "error": "unknown profile"},
+    {"name": "tunnel not loopback", "profiles": {"work": {"suffixes": [".work.ts.net"]}}, "tunnels": [{"name": "db", "listen": "0.0.0.0:5432", "target": "db.work.ts.net:5432", "profile": "work"}], "error": "not a loopback address"},
+    {"name": "tunnel same port twice", "profiles": {"work": {"suffixes": [".work.ts.net"]}}, "tunnels": [{"name": "a", "listen": "127.0.0.1:5432", "target": "db.work.ts.net:5432", "profile": "work"}, {"name": "b", "listen": "5432", "target": "db.work.ts.net:5432", "profile": "work"}], "error": "both listen on"},
+    {"name": "tunnel target without port", "profiles": {"work": {"suffixes": [".work.ts.net"]}}, "tunnels": [{"name": "db", "listen": "127.0.0.1:5432", "target": "db.work.ts.net", "profile": "work"}], "error": "not host:port"}
+  ]
+}

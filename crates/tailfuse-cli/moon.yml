@@ -1,0 +1,21 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'rust'
+layer: 'application'
+tags: ['rust-crate']
+
+dependsOn: ['core']
+
+# core's sources are inputs too, so a core change invalidates this crate's cache.
+fileGroups:
+  upstream:
+    - '/crates/tailfuse-core/src/**/*'
+    - '/crates/tailfuse-core/Cargo.toml'
+
+tasks:
+  test:
+    inputs: ['@group(sources)', '@group(workspace)', '@group(upstream)']
+  clippy:
+    inputs: ['@group(sources)', '@group(workspace)', '@group(upstream)']
+  check:
+    inputs: ['@group(sources)', '@group(workspace)', '@group(upstream)']

@@ -1,0 +1,35 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'host.exp.exponent'
+version = '0.1.26'
+
+android {
+  namespace "expo.modules.tailfuseengine"
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.26'
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+}
+
+// The Go engine, built by `engines/mobile/scripts/build-engine.sh android` (gitignored).
+//
+// A library module may not package a local .aar (`implementation files(...)` fails with "Direct
+// local .aar file dependencies are not supported when building an AAR"), so this module only
+// COMPILES against it. The app module packages it: plugins/withTailfuseAndroid.js adds
+// `implementation files(".../tfmobile.aar")` to android/app/build.gradle at prebuild. That works
+// for debug and release alike, because the app is the one that bundles the aar.
+def tfmobileAar = file('libs/tfmobile.aar')
+if (!tfmobileAar.exists()) {
+  throw new GradleException(
+    "tfmobile.aar is missing (${tfmobileAar}). Build the engine first: " +
+    "engines/mobile/scripts/build-engine.sh android (needs the Android NDK and gomobile)")
+}
+
+dependencies {
+  compileOnly files(tfmobileAar)
+  implementation "androidx.core:core-ktx:1.17.0"
+}

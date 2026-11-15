@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["TailfuseEngineModule"] },
+  "android": { "modules": ["expo.modules.tailfuseengine.TailfuseEngineModule"] }
+}

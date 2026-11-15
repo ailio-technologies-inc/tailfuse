@@ -1,0 +1,36 @@
+$schema: 'https://moonrepo.dev/schemas/tasks.json'
+
+inheritedBy:
+  tags: ['rust-crate']
+
+# Inherited by the plain library/binary crates (tag `rust-crate`): core, cli,
+# licgen. Each runs from its own crate directory, so cargo scopes to that
+# package. The Tauri app is not a rust-crate (it needs system libs on Linux);
+# it declares its own tasks.
+
+fileGroups:
+  sources:
+    - 'src/**/*'
+    - 'tests/**/*'
+    - 'benches/**/*'
+    - 'build.rs'
+    - 'Cargo.toml'
+  workspace:
+    - '/Cargo.toml'
+    - '/Cargo.lock'
+    - '/rustfmt.toml'
+    - '/.cargo/**/*'
+
+tasks:
+  test:
+    command: 'cargo test'
+    inputs: ['@group(sources)', '@group(workspace)']
+  clippy:
+    command: 'cargo clippy --all-targets -- -D warnings'
+    inputs: ['@group(sources)', '@group(workspace)']
+  fmt-check:
+    command: 'cargo fmt --check'
+    inputs: ['@group(sources)', '/rustfmt.toml']
+  check:
+    command: 'cargo check'
+    inputs: ['@group(sources)', '@group(workspace)']

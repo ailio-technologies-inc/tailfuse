@@ -16,13 +16,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v2
+        with:
+          # Only what these jobs run; go and node are for the mobile/site job below.
+          install_args: rust aqua:moonrepo/moon
       - uses: swatinem/rust-cache@v2
       # Scope to the core crates: the Tauri app needs system webkit libs on
-      # Linux and is exercised by the app job below.
-      - run: cargo test -p tailfuse-core -p tailfuse-cli -p licgen
-      - run: cargo clippy -p tailfuse-core -p tailfuse-cli -p licgen --all-targets -- -D warnings
-      - run: cargo fmt --all -- --check
+      # Linux and is exercised by the app job below. Tasks live in each
+      # project's moon.yml (shared Rust ones in .moon/tasks/rust-crate.yml).
+      - run: moon run core:test cli:test licgen:test
+      - run: moon run core:clippy cli:clippy licgen:clippy
+      # fmt covers the whole workspace: the three crates plus the app's Rust.
+      - run: moon run core:fmt-check cli:fmt-check licgen:fmt-check desktop:fmt-check
 
   app:
     strategy:
@@ -31,19 +36,39 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v2
+        with:
+          # Only what these jobs run; go and node are for the mobile/site job below.
+          install_args: rust aqua:moonrepo/moon
       - uses: swatinem/rust-cache@v2
-      - run: cargo check -p tailfuse-app
+      - run: moon run desktop:check
 
   app-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v2
+        with:
+          # Only what these jobs run; go and node are for the mobile/site job below.
+          install_args: rust aqua:moonrepo/moon
       - uses: swatinem/rust-cache@v2
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - run: cargo check -p tailfuse-app
+      - run: moon run desktop:check
+
+  # The site and the phone apps' checks (the engine bindings are not built in CI).
+  site-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: node go aqua:moonrepo/moon
+      - run: moon run site:check
+      - name: Engine (Go)
+        run: moon run mobile-engine:fmt-check mobile-engine:vet mobile-engine:test
+      - name: Mobile app
+        run: moon run mobile:typecheck mobile:lint mobile:test mobile:export-web

@@ -1,0 +1,9 @@
+# Tool versions for the whole repo. mise installs them; moon (.moon/) runs the
+# tasks and uses these tools from PATH. Tasks do not live here.
+# Install everything with: mise install
+
+[tools]
+rust = { version = "1.96.0", components = "clippy,rustfmt" }
+go = "1.27.4"      # engines/mobile/go.mod
+node = "22"        # what release.yml builds the app with
+"aqua:moonrepo/moon" = "2.6.5"

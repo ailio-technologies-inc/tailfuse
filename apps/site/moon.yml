@@ -1,0 +1,32 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'javascript'
+layer: 'application'
+
+fileGroups:
+  sources:
+    - 'src/**/*'
+    - 'public/**/*'
+    - 'wrangler.jsonc'
+
+# wrangler is not a dependency of this repo (no package.json here): npx fetches it.
+tasks:
+  dev:
+    command: 'npx wrangler dev'
+    options:
+      cache: false
+      runInCI: false
+      persistent: true
+
+  # Bundles the Worker and validates wrangler.jsonc without deploying.
+  check:
+    command: 'npx wrangler deploy --dry-run'
+    inputs: ['@group(sources)']
+
+  # Production: tailfuse.com. Local only, never from CI.
+  deploy:
+    command: 'npx wrangler deploy'
+    inputs: ['@group(sources)']
+    options:
+      cache: false
+      runInCI: false

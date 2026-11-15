@@ -4,7 +4,7 @@
 scripts/release.sh 0.1.16
 ```
 
-That bumps the version everywhere (the Cargo workspace, `app/src-tauri/tauri.conf.json`, `app/package.json`), runs the tests, commits, tags `v0.1.16` and pushes. The tag starts everything else; nothing is built on a laptop.
+That bumps the version everywhere (the Cargo workspace, `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/package.json`), runs the tests, commits, tags `v0.1.16` and pushes. The tag starts everything else; nothing is built on a laptop.
 
 ## What happens after the tag
 
@@ -18,7 +18,7 @@ The credentials stay out of this repository: the Apple key and certificate and t
 
 ## Automatic updates
 
-The app reads `https://github.com/ailio-technologies-inc/tailfuse/releases/latest/download/latest.json` a minute after launch and every six hours (`app/src-tauri/src/updates.rs`). An update installs in the background and the app relaunches into it once Tailfuse is off. Each download is checked against the updater public key in `tauri.conf.json`; a file not signed with the private key is refused.
+The app reads `https://github.com/ailio-technologies-inc/tailfuse/releases/latest/download/latest.json` a minute after launch and every six hours (`apps/desktop/src-tauri/src/updates.rs`). An update installs in the background and the app relaunches into it once Tailfuse is off. Each download is checked against the updater public key in `tauri.conf.json`; a file not signed with the private key is refused.
 
 Check a release's feed:
 
@@ -32,4 +32,4 @@ It should name the new version and four platforms: `darwin-aarch64`, `darwin-x86
 
 ## Screenshots
 
-`scripts/screenshots.sh` renders the real UI (`app/src`, with the preview stub's `?shot` state) into `docs/screenshots/` and `site/public/shots/`. Run it after a visible UI change, then deploy the site (`cd site && npx wrangler deploy`).
+`scripts/screenshots.sh` renders the real UI (`apps/desktop/src`, with the preview stub's `?shot` state) into `docs/screenshots/` and `apps/site/public/shots/`. Run it after a visible UI change, then deploy the site (`cd apps/site && npx wrangler deploy`).

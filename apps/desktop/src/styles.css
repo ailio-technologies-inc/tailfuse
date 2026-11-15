@@ -4,7 +4,7 @@
 
 :root {
   color-scheme: dark;
-  /* the site's palette (site/public/styles.css) */
+  /* the site's palette (apps/site/public/styles.css) */
   --p-bg: #18191b; --p-surface: #222427; --p-ink: #eff0f1; --p-muted: #9c9ea3;
   --p-accent: #ff4a1f; --p-accent-ink: #18191b; --p-action: #ff4a1f; --p-action-ink: #18191b;
   --p-inv-bg: #eff0f1; --p-inv-surface: #dedfe0; --p-inv-ink: #18191b; --p-inv-muted: #5b5c5e;
