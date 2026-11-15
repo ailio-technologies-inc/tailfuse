@@ -284,7 +284,9 @@ function Screen() {
           <Mark width={40} />
           <T v="h2" accessibilityRole="header" style={{ fontSize: 19, lineHeight: 24 }}>Tailfuse needs your permission</T>
           <T v="small" color={colors.muted} style={{ lineHeight: 21 }}>
-            {`To reach your tailnets, Tailfuse adds a VPN configuration to this ${device}. Apps that follow the system proxy setting, including your browsers, then send tailnet addresses through Tailfuse and everything else directly.`}
+            {s?.all_apps === false
+              ? `To reach your tailnets, Tailfuse adds a VPN configuration to this ${device}. Apps that follow the system proxy setting, including your browsers, then send tailnet addresses through Tailfuse and everything else directly.`
+              : `To reach your tailnets, Tailfuse adds a VPN configuration to this ${device}. Every app then reaches your tailnets by name and by address, and everything else goes out directly.`}
           </T>
           <T v="label" color={colors.muted}>
             {`Your ${device} asks you to allow it next. You only do this once. This ${device} can run only one VPN at a time, so the Tailscale app is disconnected while Tailfuse is on.`}

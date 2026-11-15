@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -49,6 +51,15 @@ func setLogsMode(allowLogs bool) {
 
 func (n *tsNode) Start() error {
 	setLogsMode(n.opts.Logs)
+	// tailscale's logpolicy.LogsDir (used for the socket-stats log) panics when it finds no
+	// writable place: an Android app process has no HOME, XDG_CACHE_HOME or TMPDIR, and its
+	// working directory is "/". Point it into the state folder; harmless elsewhere.
+	if os.Getenv("TS_LOGS_DIR") == "" {
+		logs := filepath.Join(n.opts.Dir, "logs")
+		if os.MkdirAll(logs, 0o700) == nil {
+			os.Setenv("TS_LOGS_DIR", logs)
+		}
+	}
 	logf := n.opts.Logf
 	if logf == nil {
 		logf = func(string, ...any) {}
