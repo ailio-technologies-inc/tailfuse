@@ -88,6 +88,17 @@ class TailfuseVpnService : VpnService() {
 
     fun stateDir(context: Context): String = File(context.filesDir, "tailfuse").absolutePath
 
+    // Whether the person wants Tailfuse on. Written when they turn it on or off (and when the system
+    // revokes the VPN), read when the system restarts the service after the process died: a restart must
+    // not turn on a Tailfuse the person turned off. Always-on VPN (the system's own start) overrides it.
+    private const val PREFS = "tailfuse_service"
+    private const val KEY_WANTED = "wanted"
+    private fun setWanted(context: Context, on: Boolean) {
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_WANTED, on).apply()
+    }
+    private fun wanted(context: Context): Boolean =
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_WANTED, false)
+
     /** Starts the service in the foreground. Call while the app is visible, or from the system. */
     fun start(context: Context) {
       val intent = Intent(context, TailfuseVpnService::class.java).setAction(ACTION_START)
@@ -95,7 +106,8 @@ class TailfuseVpnService : VpnService() {
     }
 
     /** Turns Tailfuse off; also works when only the engine (not the service) is up. */
-    fun stop() {
+    fun stop(context: Context) {
+      setWanted(context, false)
       val service = instance
       if (service != null) service.shutdown() else {
         Tfmobile.stop()
@@ -152,9 +164,12 @@ class TailfuseVpnService : VpnService() {
 
   // The system can start us three ways: the module (ACTION_START), always-on VPN (action
   // "android.net.VpnService"), or a restart after the process died (null intent, START_STICKY).
-  // All three bring the engine up; only ACTION_STOP turns it off.
+  // Only ACTION_STOP (and the person turning Tailfuse off, or a revoke) turns it off. A restart or an
+  // always-on start still needs the VPN consent (`prepare` returns null once it was given); a plain
+  // restart also needs the person to have wanted Tailfuse on when the process died.
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.action == ACTION_STOP) {
+    val action = intent?.action
+    if (action == ACTION_STOP) {
       shutdown()
       return START_NOT_STICKY
     }
@@ -167,6 +182,22 @@ class TailfuseVpnService : VpnService() {
       }
     } catch (e: Exception) {
       Log.e(TAG, "startForeground failed", e)
+      stopSelf()
+      return START_NOT_STICKY
+    }
+    when (action) {
+      ACTION_START, VpnService.SERVICE_INTERFACE -> setWanted(this, true)
+      else -> if (!wanted(this)) {
+        Log.i(TAG, "restarted by the system, but Tailfuse was off: staying off")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        return START_NOT_STICKY
+      }
+    }
+    if (action != ACTION_START && VpnService.prepare(this) != null) {
+      Log.w(TAG, "started by the system without VPN permission: staying off")
+      setWanted(this, false)
+      stopForeground(STOP_FOREGROUND_REMOVE)
       stopSelf()
       return START_NOT_STICKY
     }
@@ -233,6 +264,7 @@ class TailfuseVpnService : VpnService() {
   /** Stops the engine and the tunnel, then the service. Safe to call more than once. */
   fun shutdown() {
     shuttingDown = true
+    setWanted(this, false)
     onWorker {
       teardown()
       sink?.invoke("state")

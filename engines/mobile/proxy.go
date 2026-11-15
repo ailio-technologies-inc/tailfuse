@@ -29,6 +29,9 @@ type Router struct {
 	dial   DialFunc
 	logf   func(string, ...any)
 
+	// directDial connects a passthrough target (nil: directDialer); a test hook.
+	directDial func(ctx context.Context, network, addr string) (net.Conn, error)
+
 	passthrough atomic.Bool
 	localPort   func(netip.AddrPort) bool // Tailfuse's own local ports
 	localAddr   func(netip.Addr) bool     // test hook: what counts as this device
