@@ -72,3 +72,35 @@ jobs:
         run: moon run mobile-engine:fmt-check mobile-engine:vet mobile-engine:test
       - name: Mobile app
         run: moon run mobile:typecheck mobile:lint mobile:test mobile:export-web
+
+  # The Android debug build (arm64): the Go engine bound with gomobile, then Expo prebuild and
+  # Gradle. A separate job so a slow or broken SDK download cannot block the Rust matrix. The
+  # runner's preinstalled SDK is found through ANDROID_HOME (mise.toml keeps it when set); the
+  # pinned packages are the ones apps/mobile/README.md lists.
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: node go java aqua:moonrepo/moon
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Gradle is run from the generated android/ folder, which setup-gradle does not know about.
+          gradle-home-cache-cleanup: true
+      - name: Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.30.5"
+      - name: Engine (gomobile, arm64)
+        run: moon run mobile-engine:bind-android
+        env:
+          TF_ANDROID_ABIS: arm64
+      - run: npm ci
+        working-directory: apps/mobile
+      - run: npx expo prebuild --platform android
+        working-directory: apps/mobile
+      - name: Debug APK (arm64)
+        run: ./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
+        working-directory: apps/mobile/android

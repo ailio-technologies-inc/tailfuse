@@ -44,3 +44,4 @@ yarn-error.*
 /modules/tailfuse-engine/ios/Frameworks/Tfmobile.xcframework/
 /modules/tailfuse-engine/android/libs/tfmobile.aar
 /modules/tailfuse-engine/android/libs/tfmobile-sources.jar
+modules/tailfuse-engine/android/build/
