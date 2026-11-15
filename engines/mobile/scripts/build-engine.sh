@@ -46,8 +46,11 @@ omit=(
 tags="$(printf 'ts_omit_%s,' "${omit[@]}")"
 tags="${tags%,}"
 
+# One folder for the tools, named outright, so `go install` and PATH always agree (a tool
+# manager can point GOBIN somewhere else between the two).
 gobin="$(go env GOBIN)"
 [ -n "$gobin" ] || gobin="$(go env GOPATH)/bin"
+export GOBIN="$gobin"
 export PATH="$gobin:$PATH"
 
 # Use the gomobile version pinned in go.mod, so the tool and the bind package match.
@@ -55,6 +58,8 @@ mobile_version="$(cd "$engine" && go list -m -f '{{.Version}}' golang.org/x/mobi
 if ! command -v gomobile >/dev/null || ! command -v gobind >/dev/null; then
 	echo "installing gomobile and gobind $mobile_version"
 	go install "golang.org/x/mobile/cmd/gomobile@$mobile_version" "golang.org/x/mobile/cmd/gobind@$mobile_version"
+	hash -r
+	command -v gomobile >/dev/null || { echo "gomobile was installed but is not in $gobin" >&2; ls "$gobin" >&2; exit 1; }
 fi
 if ! gomobile version >/dev/null 2>&1; then
 	gomobile init
