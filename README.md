@@ -97,6 +97,7 @@ Suffix ownership is strict. Each suffix belongs to exactly one profile, and vali
 | `tailfuse run curl http://wiki.work.ts.net` | Run any command with proxy env (`socks5h`, remote DNS) |
 | `tailfuse env` | Print the proxy env for your shell |
 | `tailfuse tunnel add prod-db --listen 127.0.0.1:5432 --target db.work.ts.net:5432 --profile work` | Pin a local port to a tailnet service |
+| `tailfuse phone` | Show a QR code that sets up the same tailnets in the phone app (setup only, no keys) |
 | `tailfuse serve-pac` | Just the PAC URL, for manual browser configuration |
 
 ## How it works
@@ -109,13 +110,15 @@ Suffix ownership is strict. Each suffix belongs to exactly one profile, and vali
 
 ## Desktop app
 
-A Tauri menu-bar app (`app/`) wraps the same core. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL. It asks once before setting it, and never overwrites a PAC URL it did not set.
+A Tauri menu-bar app (`apps/desktop/`) wraps the same core. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL. It asks once before setting it, and never overwrites a PAC URL it did not set.
+
+To set up the phone app, open Settings and choose Set up your phone (or run `tailfuse phone`). The code carries your tailnets, their suffixes and local ports; it never carries passwords, auth keys or the license, so you sign in to each tailnet once on the phone.
 
 The app updates itself. It checks the latest GitHub release's `latest.json` a minute after launch and every six hours, installs a newer version in the background, and relaunches into it once Tailfuse is off, so a session is never cut. Every update is signed with the Tailfuse updater key and verified against the public key built into the app; there is no update server beyond GitHub Releases.
 
 ```sh
-cd app && npm install && npm run tauri dev   # develop
-scripts/screenshots.sh                       # re-take docs/screenshots and the site's hero shots
+moon run desktop:dev    # develop (npm ci, then tauri dev)
+scripts/screenshots.sh  # re-take docs/screenshots and the site's hero shots
 ```
 
 Releasing is one command; see [docs/RELEASING.md](docs/RELEASING.md).
@@ -148,11 +151,41 @@ It works against the running Tailfuse (the app, or `tailfuse up`).
 | `crates/tailfuse-core` | Config, per-tailnet daemon management, loopback router, PAC, tunnels, system proxy, licensing |
 | `crates/tailfuse-cli` | The `tailfuse` binary (also used by the app's SSH path) |
 | `crates/licgen` | Vendor-only license key signer (not distributed) |
-| `app/` | Tauri menu-bar app (Rust + vanilla frontend), with automatic updates |
-| `site/` | tailfuse.com: a Cloudflare Worker with static assets (downloads, license keys, Stripe receipts) |
+| `apps/desktop/` | Tauri menu-bar app (Rust + vanilla frontend), with automatic updates |
+| `apps/site/` | tailfuse.com: a Cloudflare Worker with static assets (downloads, license keys, Stripe receipts) |
+| `apps/mobile/` | The iOS and Android app: an Expo interface plus native VPN shells (not yet released) |
+| `engines/mobile/` | The Go engine behind the phone apps, with the gomobile bindings (`scripts/build-engine.sh`) |
 | `brand/` | The icon and mark sources; `scripts/gen-icons.sh` renders every app icon from them |
 | `scripts/` | `release.sh` (cut a release), `screenshots.sh`, `gen-icons.sh`, `notarize-macos.sh` (manual fallback) |
 | `docs/` | `RELEASING.md` and the screenshots |
+
+## Working in the repo
+
+Tool versions (Rust, Go, Node, moon) are pinned in `mise.toml`; [moon](https://moonrepo.dev) runs the tasks, using those tools from your PATH. Tasks are defined in each project's `moon.yml`.
+
+```sh
+mise install                  # once: installs the pinned tools
+moon query projects           # the projects: desktop, site, core, cli, licgen, mobile, mobile-engine
+moon run core:test            # one task in one project
+moon run :test                # a task in every project that has it
+moon run core:clippy cli:clippy licgen:clippy desktop:check
+moon run site:check           # bundles the Worker without deploying (wrangler --dry-run)
+moon ci                       # the tasks affected by your changes (GitHub CI calls explicit moon run targets)
+```
+
+Cargo is one workspace with one `target/` at the root; moon does not cache it, cargo does. `cargo` commands work as usual inside the pinned toolchain.
+
+## Phone apps
+
+There are iOS and Android apps in `apps/mobile`: an Expo (React Native) interface over a Go engine in `engines/mobile` that runs one embedded Tailscale node per tailnet, with the same hostname-suffix routing as the desktop core. Two tailnets are free; more are a one-time in-app purchase. By default every app on the phone reaches every tailnet, by name and by raw `100.x` address, the way the Tailscale app does for one: the engine routes Tailscale's ranges into the VPN and hands each packet to the owning tailnet's WireGuard engine, giving devices that two tailnets number alike their own stable `198.18.x.x` address. A switch in Settings drops back to proxy mode, where only browsers and other proxy-aware apps do. They are not released yet: proxy mode has run on an iPhone, all-apps mode not yet on a device.
+
+```sh
+cd apps/mobile && npm ci && npx expo start --web    # preview the interface in a browser, with a mock engine
+engines/mobile/scripts/build-engine.sh ios          # build the engine bindings (or: android, all)
+moon run mobile-engine:test mobile:typecheck mobile:test
+```
+
+The interface needs a development build (`expo prebuild` or EAS) to run the real engine, not Expo Go. See `apps/mobile/README.md` and `engines/mobile/README.md`.
 
 ## Pricing
 

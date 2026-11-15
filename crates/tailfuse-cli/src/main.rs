@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tailfuse_core::config::{self, Config, Profile, Tunnel};
-use tailfuse_core::{daemon, license, router, sysproxy, tunnels};
+use tailfuse_core::{daemon, license, router, sync, sysproxy, tunnels};
 use tokio::sync::watch;
 
 mod mcp;
@@ -52,6 +52,8 @@ enum Commands {
     ServePac,
     /// Run an MCP server on stdio, for AI assistants (e.g. `claude mcp add tailfuse -- tailfuse mcp`).
     Mcp,
+    /// Show a code to scan with Tailfuse on your phone, to set up the same tailnets there.
+    Phone,
     /// ssh ProxyCommand backend (internal).
     #[command(hide = true)]
     DialProfile {
@@ -174,6 +176,7 @@ async fn main() -> Result<()> {
             let path = flag_config_path()?;
             tokio::task::spawn_blocking(move || mcp::serve(path)).await?
         }
+        Commands::Phone => cmd_phone(),
         Commands::Test { hostname } => cmd_test(&hostname),
         Commands::Env => cmd_env(),
         Commands::Run { command } => cmd_run(command).await,
@@ -215,6 +218,21 @@ fn cmd_init() -> Result<()> {
         "wrote {} — edit suffixes to match your tailnets, then `tailfuse up`",
         path.display()
     );
+    Ok(())
+}
+
+fn cmd_phone() -> Result<()> {
+    let (cfg, _) = load()?;
+    let out = sync::link(&cfg, &sync::computer_name())?;
+    println!("Scan this with Tailfuse on your phone (Sync from your computer), or open the link on it. It carries no passwords or keys.");
+    println!();
+    println!("{}", sync::qr_terminal(&out.link)?);
+    println!();
+    println!("{}", out.link);
+    if out.tunnels_dropped {
+        println!();
+        println!("Local ports were left out: the setup was too big for one code.");
+    }
     Ok(())
 }
 

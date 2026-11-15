@@ -1,0 +1,21 @@
+# Tool versions for the whole repo. mise installs them; moon (.moon/) runs the
+# tasks and uses these tools from PATH. Tasks do not live here.
+# Install everything with: mise install
+
+[tools]
+rust = { version = "1.96.0", components = "clippy,rustfmt" }
+go = "1.27.4"      # engines/mobile/go.mod
+node = "22"        # what release.yml builds the app with
+"aqua:moonrepo/moon" = "2.6.5"
+java = "temurin-17"
+
+[env]
+# An SDK already in the environment wins (CI runners set ANDROID_HOME); otherwise Android Studio's
+# macOS location, where the README's one-time sdkmanager commands install it.
+ANDROID_HOME = "{{ env.ANDROID_HOME | default(value=env.HOME ~ '/Library/Android/sdk') }}"
+ANDROID_SDK_ROOT = "{{ env.ANDROID_HOME | default(value=env.HOME ~ '/Library/Android/sdk') }}"
+ANDROID_NDK_HOME = "{{ env.ANDROID_HOME | default(value=env.HOME ~ '/Library/Android/sdk') }}/ndk/27.1.12297006"
+_.path = [
+  "{{ env.ANDROID_HOME | default(value=env.HOME ~ '/Library/Android/sdk') }}/cmdline-tools/latest/bin",
+  "{{ env.ANDROID_HOME | default(value=env.HOME ~ '/Library/Android/sdk') }}/platform-tools",
+]

@@ -1,0 +1,23 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <!-- Android 14+: VPN apps may run a foreground service of type systemExempted. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+  <!-- Android 13+: runtime permission for the "Tailfuse is on" notification; the VPN works without it. -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application>
+    <!-- exported + BIND_VPN_SERVICE: the system binds to it, and starts it for always-on VPN. -->
+    <service
+        android:name=".TailfuseVpnService"
+        android:exported="true"
+        android:foregroundServiceType="systemExempted"
+        android:permission="android.permission.BIND_VPN_SERVICE"
+        android:stopWithTask="false">
+      <intent-filter>
+        <action android:name="android.net.VpnService" />
+      </intent-filter>
+    </service>
+  </application>
+</manifest>

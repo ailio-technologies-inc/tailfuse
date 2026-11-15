@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Screenshots of the real app UI for the README (docs/screenshots/) and tailfuse.com (site/public/shots/).
+# Screenshots of the real app UI for the README (docs/screenshots/) and tailfuse.com (apps/site/public/shots/).
 # The app's own index.html and panel.html are rendered in headless Chrome with the preview stub's ?shot state
 # (scripts/preview-stub.js: three tailnets, licensed, no notices), inside a macOS-style window frame, at 2x.
 #
@@ -12,8 +12,8 @@ PORT=${PORT:-8797}
 
 WORK=$(mktemp -d)
 trap 'kill "$SERVER" 2>/dev/null || true; rm -rf "$WORK"' EXIT
-cp -R "$ROOT/app/src" "$WORK/www"
-# The stub stays out of app/src in git (that folder ships inside the app); its tracked copy is here.
+cp -R "$ROOT/apps/desktop/src" "$WORK/www"
+# The stub stays out of apps/desktop/src in git (that folder ships inside the app); its tracked copy is here.
 cp "$ROOT/scripts/preview-stub.js" "$WORK/www/preview-stub.js"
 
 # frame.html?page=index.html&w=720&h=820: the page in an iframe, as a window with traffic lights and a shadow.
@@ -52,15 +52,15 @@ shoot() { # shoot <out.png> <frame query> <viewport w> <viewport h>
     --default-background-color=00000000 --user-data-dir="$WORK/chrome" --virtual-time-budget=4000 \
     --window-size="$3,$4" --screenshot="$1" "http://127.0.0.1:$PORT/frame.html?$2" 2>/dev/null
 }
-mkdir -p "$ROOT/docs/screenshots" "$ROOT/site/public/shots"
+mkdir -p "$ROOT/docs/screenshots" "$ROOT/apps/site/public/shots"
 shoot "$ROOT/docs/screenshots/app.png" "page=index.html&w=720&h=820" 848 956
 shoot "$ROOT/docs/screenshots/settings.png" "page=index.html&w=720&h=820&at=license-h" 848 956
 shoot "$ROOT/docs/screenshots/panel.png" "page=panel.html&w=340&h=318&panel" 468 454
-cp "$ROOT/docs/screenshots/"{app,settings,panel}.png "$ROOT/site/public/shots/"
+cp "$ROOT/docs/screenshots/"{app,settings,panel}.png "$ROOT/apps/site/public/shots/"
 # The site serves WebP first (about 60% smaller), with the PNGs as the fallback.
 if command -v cwebp >/dev/null; then
-  for f in app panel; do cwebp -quiet -q 84 -alpha_q 90 "$ROOT/site/public/shots/$f.png" -o "$ROOT/site/public/shots/$f.webp"; done
+  for f in app panel; do cwebp -quiet -q 84 -alpha_q 90 "$ROOT/apps/site/public/shots/$f.png" -o "$ROOT/apps/site/public/shots/$f.webp"; done
 else
-  echo "cwebp not found: site/public/shots/*.webp are stale (brew install webp)" >&2
+  echo "cwebp not found: apps/site/public/shots/*.webp are stale (brew install webp)" >&2
 fi
-echo "screenshots: docs/screenshots/{app,settings,panel}.png and site/public/shots/"
+echo "screenshots: docs/screenshots/{app,settings,panel}.png and apps/site/public/shots/"

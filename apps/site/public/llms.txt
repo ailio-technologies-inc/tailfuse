@@ -1,0 +1,112 @@
+# Tailfuse
+
+> Tailfuse connects one machine to several Tailscale tailnets at once. It runs one userspace Tailscale node per tailnet and a loopback router on 127.0.0.1:43100 that sends each hostname to the tailnet that owns it. It is a menu-bar app and a `tailfuse` command-line tool for macOS, Windows and Linux. It is free for two tailnets; a license key for more is by optional donation, from $0.
+
+Tailfuse is made by Ailio Technologies Inc. (https://ailio.ca). It is an independent tool, not affiliated with or endorsed by Tailscale Inc. The source is MIT licensed. `tailscaled` and `tailscale` are separate Tailscale binaries under the Tailscale terms.
+
+## What it does
+
+- Several tailnets online at once: no VM, no account switching, no second full Tailscale daemon.
+- Each tailnet runs in userspace networking mode (`tailscaled --tun=userspace-networking`): no TUN device, no routes, no DNS changes. An installed Tailscale client keeps its primary tailnet.
+- One local router on `127.0.0.1:43100` speaks SOCKS5 and HTTP CONNECT and serves a PAC file at `http://127.0.0.1:43100/tailfuse.pac`.
+- Routing is by hostname suffix. Each profile owns suffixes such as `.work.ts.net`; the longest match wins.
+- A tailnet also gets the names it serves itself: its split-DNS domains, and any hostname that resolves to one of its devices (a custom domain pointed at a 100.x address). Tailfuse learns these automatically; a name or address two tailnets both claim is refused.
+- A hostname no profile owns is refused, never sent to another tailnet. Browsers using the PAC file connect direct for those names.
+- Tunnels pin a local port to one tailnet service, for example `127.0.0.1:5432` to `db.work.ts.net:5432`.
+- Keys are locked to the user's account: each tailnet's node keys and control socket sit in a folder only that account can open; auth keys and the license key are kept in the macOS Keychain or Windows Credential Manager, not in the config file (on Linux the config file is readable only by the user).
+- It runs as the user: no root helper and no kernel extension. The one system setting it changes is the system's automatic proxy (PAC) address, set once with the user's permission and removable from the app's settings.
+
+## Install
+
+- The menu-bar app, served from GitHub Releases: https://tailfuse.com/download (picks the platform), or https://tailfuse.com/download/app/macos (universal app, signed and notarized by Apple), /download/app/windows (installer), /download/app/linux (AppImage), /download/app/linux-deb
+- The app updates itself: it checks the latest GitHub release's latest.json every six hours, verifies the update's signature against the key built into the app, and relaunches into it once Tailfuse is off.
+- The command-line tool, as an archive: https://tailfuse.com/download/cli/macos, /download/cli/windows, /download/cli/linux-amd64, /download/cli/linux-arm64
+- The app and the command line both run Tailscale's own `tailscaled`, which must be installed on the machine.
+- macOS: `brew install --cask ailio-technologies-inc/tap/tailfuse` (the menu-bar app, notarized; the app can then install the `tailfuse` command from its settings)
+- Windows: `winget install ailio-technologies-inc.tailfuse`
+- From source: `cargo install --git https://github.com/ailio-technologies-inc/tailfuse tailfuse-cli`
+
+## Quick start
+
+```sh
+tailfuse init                      # starter config
+tailfuse profile login personal    # browser sign-in, once per tailnet
+tailfuse profile login work
+tailfuse up                        # router + system PAC
+```
+
+Config lives at `~/.config/tailfuse/config.yaml`:
+
+```yaml
+profiles:
+  personal:
+    suffixes: [.home-lab.ts.net]
+  work:
+    suffixes: [.work.ts.net, .internal.example]
+    accept_routes: true
+    exit_node: exit-us
+tunnels:
+  - name: prod-db
+    profile: work
+    listen: 127.0.0.1:5432
+    target: db.work.ts.net:5432
+```
+
+## Commands
+
+- `tailfuse up [--no-pac]`: start everything and set the system PAC.
+- `tailfuse down`: clear the system PAC.
+- `tailfuse status`: per-profile state, hostname and Tailscale IPs.
+- `tailfuse test <host>`: show which profile owns a hostname.
+- `tailfuse ssh user@host.work.ts.net`: SSH through the owning profile.
+- `tailfuse run curl http://wiki.work.ts.net`: run any command with the proxy environment.
+- `tailfuse env`: print the proxy environment for your shell.
+- `tailfuse tunnel add prod-db --listen 127.0.0.1:5432 --target db.work.ts.net:5432 --profile work`: pin a local port to a tailnet service.
+- `tailfuse serve-pac`: just the PAC URL, for manual browser configuration.
+- `tailfuse phone`: show a QR code that sets up the same tailnets in the phone app (no passwords or keys in it).
+- `tailfuse license activate <key>`: activate a license key.
+- `tailfuse mcp`: run the MCP server on stdio, for Claude and other AI assistants (see below).
+
+## Use with AI assistants (MCP)
+
+`tailfuse mcp` runs a Model Context Protocol server on stdio. It is part of the `tailfuse` command-line tool.
+
+- Claude Code: `claude mcp add tailfuse -- tailfuse mcp`
+- Any other MCP client: `{"command": "tailfuse", "args": ["mcp"]}`
+- In the desktop app: Settings, AI assistants (MCP), Copy setup copies the Claude Code command. It needs the command line, which the Install button in the app's Settings puts in place.
+
+It uses the Tailfuse that is already running (the menu-bar app, or `tailfuse up`) and the same rule as the router: only hostnames a tailnet owns are reachable; anything else is refused.
+
+Tools:
+
+- `tailfuse_status`: each tailnet's state (connected, disconnected, needs sign-in, off), the account it signed in with, the suffixes it owns, and this computer's name and Tailscale IPs on it.
+- `tailfuse_list_devices`: devices on one tailnet or all of them: name, DNS name, Tailscale IPs, OS and whether each is online. Filters: `tailnet`, `online_only`, `query`.
+- `tailfuse_which_tailnet`: which tailnet a hostname or URL is routed to, or that no tailnet owns it.
+- `tailfuse_http_request`: an HTTP(S) request (GET, HEAD, POST, PUT, PATCH, DELETE) to a service on a tailnet. Returns the status, headers and up to 64 KB of the body.
+- `tailfuse_check_port`: whether a TCP port on a tailnet host accepts connections, for example a database on db.work.ts.net:5432.
+- `tailfuse_set_connected`: connect or disconnect one tailnet while Tailfuse is running.
+
+## License keys and price
+
+- Two tailnet profiles are free, forever.
+- More profiles need a license key. The key is by optional donation: the form at https://tailfuse.com/#pricing takes any amount from $0 up, and a $0 key is the same key as a paid one.
+- Every key includes every future update, forever.
+- Keys are signed and verified offline: no phone-home, no account, no telemetry.
+- A shared license code (for a group) is exchanged once for a signed key at tailfuse.com/api/redeem; the key is then verified offline like any other.
+
+## Questions
+
+- How do I use multiple Tailscale tailnets at once? The Tailscale app connects to one tailnet at a time. Install Tailfuse, add one profile per tailnet with the hostname suffixes it owns, sign each in once (`tailfuse profile login <name>`), and turn it on (`tailfuse up` or the app's switch). Each tailnet gets its own userspace Tailscale node, and the router on 127.0.0.1:43100 sends each hostname to its tailnet.
+- Does Tailfuse work with Claude or other MCP clients? Yes, through `tailfuse mcp` (see above).
+- Is Tailfuse made by Tailscale? No. It is an independent tool that runs Tailscale's `tailscaled`.
+- Does it replace the Tailscale app? No. An installed Tailscale client keeps its primary tailnet; Tailfuse adds the others beside it.
+- Does it change routes or DNS? No. The one system setting it changes is the automatic proxy (PAC) address, with the user's permission.
+- Can a server sign in unattended? Yes: put a Tailscale auth key in that profile's config.
+
+## Links
+
+- [Website](https://tailfuse.com/)
+- [Source code and README](https://github.com/ailio-technologies-inc/tailfuse)
+- [Releases](https://github.com/ailio-technologies-inc/tailfuse/releases/latest)
+- [MIT license](https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE)
+- [Privacy](https://tailfuse.com/privacy)

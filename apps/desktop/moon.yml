@@ -1,0 +1,54 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'rust'
+layer: 'application'
+
+dependsOn: ['core']
+
+fileGroups:
+  sources:
+    - 'src/**/*'
+    - 'src-tauri/src/**/*'
+    - 'src-tauri/build.rs'
+    - 'src-tauri/Cargo.toml'
+    - 'src-tauri/tauri.conf.json'
+    - 'src-tauri/capabilities/**/*'
+    - 'src-tauri/icons/**/*'
+  core:
+    - '/crates/tailfuse-core/src/**/*'
+    - '/crates/tailfuse-core/Cargo.toml'
+    - '/Cargo.toml'
+    - '/Cargo.lock'
+
+tasks:
+  # CI: Rust compile check of the Tauri app (Linux needs webkit2gtk, see ci.yml).
+  check:
+    command: 'cargo check -p tailfuse-app'
+    inputs: ['@group(sources)', '@group(core)']
+  fmt-check:
+    command: 'cargo fmt -p tailfuse-app --check'
+    inputs: ['src-tauri/src/**/*', '/rustfmt.toml']
+
+  install:
+    command: 'npm ci'
+    inputs: ['package.json', 'package-lock.json']
+    options:
+      cache: false
+      runInCI: false
+
+  # Develop: opens the app with a dev build.
+  dev:
+    command: 'npx tauri dev'
+    deps: ['~:install']
+    options:
+      cache: false
+      runInCI: false
+      persistent: true
+
+  # Local release-style build (bundles are large; releases are cut by CI, docs/RELEASING.md).
+  build:
+    command: 'npx tauri build'
+    deps: ['~:install']
+    options:
+      cache: false
+      runInCI: false

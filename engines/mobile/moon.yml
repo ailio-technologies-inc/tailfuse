@@ -1,0 +1,38 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'go'
+layer: 'library'
+
+fileGroups:
+  sources:
+    - '**/*.go'
+    - 'go.mod'
+    - 'go.sum'
+
+tasks:
+  fmt-check:
+    # gofmt -l prints unformatted files and exits 0, so fail when it prints anything.
+    script: 'out=$(gofmt -l .); if [ -n "$out" ]; then echo "$out"; exit 1; fi'
+    inputs: ['@group(sources)']
+  vet:
+    command: 'go vet ./...'
+    inputs: ['@group(sources)']
+  test:
+    command: 'go test -race ./...'
+    inputs: ['@group(sources)']
+
+  # gomobile bindings for the app. Local only: needs Xcode (ios) or the NDK (android).
+  bind-ios:
+    command: 'scripts/build-engine.sh ios'
+    inputs: ['@group(sources)', 'scripts/build-engine.sh']
+    outputs: ['/apps/mobile/modules/tailfuse-engine/ios/Frameworks/Tfmobile.xcframework']
+    options:
+      cache: false
+      runInCI: false
+  bind-android:
+    command: 'scripts/build-engine.sh android'
+    inputs: ['@group(sources)', 'scripts/build-engine.sh']
+    outputs: ['/apps/mobile/modules/tailfuse-engine/android/libs/tfmobile.aar']
+    options:
+      cache: false
+      runInCI: false

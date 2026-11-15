@@ -1,0 +1,59 @@
+# npm with its own lockfile (no root workspace).
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'application'
+stack: 'frontend'
+
+dependsOn: ['mobile-engine']
+
+fileGroups:
+  sources:
+    - 'src/**/*'
+    - 'modules/**/*'
+    - 'assets/**/*'
+    - 'scripts/**/*'
+    - '*.ts'
+    - '*.tsx'
+    - '*.js'
+    - 'app.json'
+    - 'tsconfig.json'
+    - 'package.json'
+    - 'package-lock.json'
+
+tasks:
+  install:
+    command: 'npm ci'
+    inputs: ['package.json', 'package-lock.json']
+    options:
+      cache: false
+
+  typecheck:
+    command: 'npx tsc --noEmit'
+    deps: ['~:install']
+    inputs: ['@group(sources)']
+
+  lint:
+    command: 'npx eslint .'
+    deps: ['~:install']
+    inputs: ['@group(sources)', 'eslint.config.js']
+
+  test:
+    command: 'npm test'
+    deps: ['~:install']
+    inputs: ['@group(sources)']
+
+  # Static web build (Expo web export).
+  export-web:
+    command: 'npx expo export --platform web'
+    deps: ['~:install']
+    inputs: ['@group(sources)']
+    outputs: ['dist']
+
+  start:
+    command: 'npx expo start'
+    deps: ['~:install']
+    options:
+      cache: false
+      runInCI: false
+      persistent: true

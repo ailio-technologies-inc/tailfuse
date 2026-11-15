@@ -3,7 +3,7 @@ members = [
     "crates/tailfuse-core",
     "crates/tailfuse-cli",
     "crates/licgen",
-    "app/src-tauri",
+    "apps/desktop/src-tauri",
 ]
 resolver = "2"
 

@@ -16,13 +16,23 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          fetch-depth: 0 # moon compares against main
+      - name: Make main available to moon
+        shell: bash
+        run: git rev-parse --verify -q main || git branch main origin/main
+      - uses: jdx/mise-action@v2
+        with:
+          # Only what these jobs run; go and node are for the mobile/site job below.
+          install_args: rust aqua:moonrepo/moon
       - uses: swatinem/rust-cache@v2
       # Scope to the core crates: the Tauri app needs system webkit libs on
-      # Linux and is exercised by the app job below.
-      - run: cargo test -p tailfuse-core -p tailfuse-cli -p licgen
-      - run: cargo clippy -p tailfuse-core -p tailfuse-cli -p licgen --all-targets -- -D warnings
-      - run: cargo fmt --all -- --check
+      # Linux and is exercised by the app job below. Tasks live in each
+      # project's moon.yml (shared Rust ones in .moon/tasks/rust-crate.yml).
+      - run: moon run core:test cli:test licgen:test
+      - run: moon run core:clippy cli:clippy licgen:clippy
+      # fmt covers the whole workspace: the three crates plus the app's Rust.
+      - run: moon run core:fmt-check cli:fmt-check licgen:fmt-check desktop:fmt-check
 
   app:
     strategy:
@@ -31,19 +41,94 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          fetch-depth: 0 # moon compares against main
+      - name: Make main available to moon
+        shell: bash
+        run: git rev-parse --verify -q main || git branch main origin/main
+      - uses: jdx/mise-action@v2
+        with:
+          # Only what these jobs run; go and node are for the mobile/site job below.
+          install_args: rust aqua:moonrepo/moon
       - uses: swatinem/rust-cache@v2
-      - run: cargo check -p tailfuse-app
+      - run: moon run desktop:check
 
   app-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          fetch-depth: 0 # moon compares against main
+      - name: Make main available to moon
+        shell: bash
+        run: git rev-parse --verify -q main || git branch main origin/main
+      - uses: jdx/mise-action@v2
+        with:
+          # Only what these jobs run; go and node are for the mobile/site job below.
+          install_args: rust aqua:moonrepo/moon
       - uses: swatinem/rust-cache@v2
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - run: cargo check -p tailfuse-app
+      - run: moon run desktop:check
+
+  # The site and the phone apps' checks (the engine bindings are not built in CI).
+  site-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # moon compares against main
+      - name: Make main available to moon
+        shell: bash
+        run: git rev-parse --verify -q main || git branch main origin/main
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: node go aqua:moonrepo/moon
+      - run: moon run site:check
+      - name: Engine (Go)
+        run: moon run mobile-engine:fmt-check mobile-engine:vet mobile-engine:test
+      - name: Mobile app
+        run: moon run mobile:typecheck mobile:lint mobile:test mobile:export-web
+
+  # The Android debug build (arm64): the Go engine bound with gomobile, then Expo prebuild and
+  # Gradle. A separate job so a slow or broken SDK download cannot block the Rust matrix. The
+  # runner's preinstalled SDK is found through ANDROID_HOME (mise.toml keeps it when set); the
+  # pinned packages are the ones apps/mobile/README.md lists.
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # moon compares against main
+      - name: Make main available to moon
+        shell: bash
+        run: git rev-parse --verify -q main || git branch main origin/main
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: node go java aqua:moonrepo/moon
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          # Gradle is run from the generated android/ folder, which setup-gradle does not know about.
+          gradle-home-cache-cleanup: true
+      - name: Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-37.0" "build-tools;37.0.0" "ndk;27.1.12297006" "cmake;3.30.5"
+      - name: Engine (gomobile, arm64)
+        # The moon task for this is left out of CI runs elsewhere, so the script is called directly.
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
+          bash engines/mobile/scripts/build-engine.sh android
+        env:
+          TF_ANDROID_ABIS: arm64
+      - run: npm ci
+        working-directory: apps/mobile
+      - run: npx expo prebuild --platform android
+        working-directory: apps/mobile
+      - name: Debug APK (arm64)
+        run: ./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
+        working-directory: apps/mobile/android

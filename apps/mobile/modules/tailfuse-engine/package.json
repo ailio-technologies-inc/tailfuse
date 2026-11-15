@@ -1,0 +1,7 @@
+{
+  "name": "tailfuse-engine",
+  "version": "0.1.26",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts"
+}

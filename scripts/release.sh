@@ -19,13 +19,13 @@ git rev-parse -q --verify "refs/tags/v$V" >/dev/null && { echo "release: v$V alr
 node -e 'const fs=require("fs");const s=fs.readFileSync("Cargo.toml","utf8");fs.writeFileSync("Cargo.toml",s.replace(/^version = "[^"]+"/m,`version = "${process.argv[1]}"`))' "$V"
 node -e '
   const fs=require("fs"); const v=process.argv[1];
-  for (const f of ["app/src-tauri/tauri.conf.json","app/package.json"]) {
+  for (const f of ["apps/desktop/src-tauri/tauri.conf.json","apps/desktop/package.json"]) {
     const j=JSON.parse(fs.readFileSync(f,"utf8")); j.version=v; fs.writeFileSync(f, JSON.stringify(j,null,2)+"\n");
   }' "$V"
 cargo update -q --workspace
 cargo test -q -p tailfuse-core -p tailfuse-cli >/dev/null
 
-git add Cargo.toml Cargo.lock app/src-tauri/tauri.conf.json app/package.json
+git add Cargo.toml Cargo.lock apps/desktop/src-tauri/tauri.conf.json apps/desktop/package.json
 git commit -q -m "Release v$V"
 git tag "v$V"
 git push -q origin main "v$V"

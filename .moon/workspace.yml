@@ -1,0 +1,21 @@
+$schema: 'https://moonrepo.dev/schemas/workspace.json'
+
+projects:
+  desktop: 'apps/desktop'
+  site: 'apps/site'
+  core: 'crates/tailfuse-core'
+  cli: 'crates/tailfuse-cli'
+  licgen: 'crates/licgen'
+  mobile: 'apps/mobile'
+  mobile-engine: 'engines/mobile'
+
+vcs:
+  client: 'git'
+  defaultBranch: 'main'
+
+hasher:
+  # Never hash build output or installed packages.
+  ignorePatterns:
+    - '**/target/**'
+    - '**/node_modules/**'
+    - '**/dist/**'
