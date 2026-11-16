@@ -120,8 +120,7 @@
       "operatingSystem": "macOS, Windows, Linux",
       "downloadUrl": "https://tailfuse.com/download",
       "installUrl": "https://tailfuse.com/download",
-      "softwareRequirements": "Tailscale's tailscaled",
-      "license": "https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE",
+        "license": "https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE",
       "isAccessibleForFree": true,
       "sameAs": [
         "https://github.com/ailio-technologies-inc/tailfuse"
@@ -178,7 +177,7 @@
           "name": "Does Tailfuse replace the Tailscale app?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. An installed Tailscale client keeps owning the primary tailnet, and Tailfuse adds the others beside it."
+            "text": "It can. The desktop app includes its own Tailscale runtime, so the Tailscale app is optional. An installed client can keep owning the primary tailnet while Tailfuse adds the others beside it."
           }
         },
         {
@@ -525,7 +524,7 @@ Ask me before any step that needs my password or changes a system setting. Never
 <div class="faq">
 <div class="faq__row"><h3>What does a Tailfuse license cost?</h3><p>Two tailnets are free. A license key for more costs whatever you choose, including nothing, and a $0 key is the same key as a $10 one.</p></div>
 <div class="faq__row"><h3>Is Tailfuse made by Tailscale?</h3><p>No. Tailfuse is an independent tool. It runs the tailscaled binary, which stays under the Tailscale terms.</p></div>
-<div class="faq__row"><h3>Does Tailfuse replace the Tailscale app?</h3><p>No. An installed Tailscale client keeps owning the primary tailnet, and Tailfuse adds the others beside it.</p></div>
+<div class="faq__row"><h3>Does Tailfuse replace the Tailscale app?</h3><p>It can. The desktop app includes its own Tailscale runtime, so the Tailscale app is optional. An installed client can keep owning the primary tailnet while Tailfuse adds the others beside it.</p></div>
 <div class="faq__row"><h3>Can a server log in to a tailnet unattended?</h3><p>Yes. Put a Tailscale auth key in that profile's config and it signs in with no browser step. On macOS and Windows, Tailfuse then moves the key into the Keychain or Credential Manager.</p></div>
 </div>
 </div>
@@ -571,7 +570,7 @@ Ask me before any step that needs my password or changes a system setting. Never
 <div class="faq__row"><h3>What can an AI assistant do through Tailfuse?</h3><p>It can list your tailnets and their devices, ask which tailnet owns a hostname, make HTTP requests to tailnet services, check whether a port is open, and connect or disconnect a tailnet. Requests to a hostname no tailnet owns are refused.</p></div>
 <div class="faq__row"><h3>Does Tailfuse change my routes or DNS?</h3><p>No. Each tailnet runs without a TUN device, a route or a DNS change, and Tailfuse runs as your user with no root helper. The one system setting it changes is the automatic proxy (PAC) address, set with your permission and removable from the app's settings.</p></div>
 <div class="faq__row"><h3>How do browsers and terminal tools reach tailnet hosts?</h3><p>Browsers follow the system's automatic proxy setting. In a terminal, <code>tailfuse run</code> starts a command with the proxy set and <code>tailfuse ssh</code> opens SSH through the right tailnet. Other apps can use 127.0.0.1:43100 as a SOCKS5 or HTTP proxy, or a tunnel that pins a local port to one service.</p></div>
-<div class="faq__row"><h3>Which systems does Tailfuse run on?</h3><p>macOS (a universal app, signed and notarized), Windows on x86-64 and Linux on x86-64 as an AppImage or a .deb. The command line also comes for Linux on arm64. Tailscale's own tailscaled must be installed. <a class="link" href="/download">Download Tailfuse</a></p></div>
+<div class="faq__row"><h3>Which systems does Tailfuse run on?</h3><p>macOS (a universal app, signed and notarized), Windows on x86-64 and Linux on x86-64 as an AppImage or a .deb. The command line also comes for Linux on arm64. The desktop app bundles Tailscale's runtime; a source-built command line can use a system tailscaled. <a class="link" href="/download">Download Tailfuse</a></p></div>
 </div>
 </div>
 </section>

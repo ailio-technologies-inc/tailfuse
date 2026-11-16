@@ -6,6 +6,8 @@ scripts/release.sh 0.1.16
 
 That bumps the version everywhere (the Cargo workspace, `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/package.json`), runs the tests, commits, tags `v0.1.16` and pushes. The tag starts everything else; nothing is built on a laptop.
 
+Every desktop build runs `apps/desktop/scripts/stage-tailscale.mjs`. It builds the pinned `tailscale` and `tailscaled` sidecars from Tailscale's checksum-verified Go module (including a universal binary for macOS) and Tauri bundles them beside the app executable. App builders therefore need the Go version pinned in `mise.toml`; end users do not need Tailscale installed.
+
 ## What happens after the tag
 
 | Where | What |

@@ -3,6 +3,7 @@
 .DS_Store
 dist/
 node_modules/
+apps/desktop/src-tauri/binaries/
 
 # design-taste skill artifacts (checks only, not shipped logic)
 apps/desktop/.taste-skill/

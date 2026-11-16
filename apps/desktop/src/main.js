@@ -44,7 +44,7 @@ function sentence(text) {
 function friendly(err) {
   const raw = String(err?.message ?? err);
   if (/tailscaled not found|tailscale CLI not found/i.test(raw)) {
-    return ["Tailscale isn't installed", "Tailfuse runs on Tailscale's own software. Install Tailscale from tailscale.com/download, then try again."];
+    return ["Tailfuse's runtime is missing", "Reinstall Tailfuse to restore its bundled Tailscale runtime, then try again. Tailscale itself does not need to be installed."];
   }
   if (/requires a license/i.test(raw)) {
     return ["That needs a license key", "Two tailnets are free. Get a key at tailfuse.com (the donation is optional) and paste it under License."];
@@ -131,9 +131,19 @@ function removeIcon(name) {
   const id = `profile:${name}`;
   const armed = pendingRemove.has(id);
   const b = h("button", { class: `icon-btn${armed ? " is-armed" : ""}`, type: "button", "data-remove": id, title: armed ? "Click again to remove" : `Remove ${name}`, "aria-label": armed ? `Confirm removing ${name}` : `Remove ${name}` });
-  b.innerHTML = armed
-    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>'
-    : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [key, value] of Object.entries({
+    viewBox: "0 0 24 24", width: "16", height: "16", fill: "none",
+    stroke: "currentColor", "stroke-width": armed ? "2" : "1.9",
+    "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true",
+  })) svg.setAttribute(key, value);
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", armed
+    ? "M5 12l5 5 9-10"
+    : "M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3");
+  svg.append(path);
+  b.replaceChildren(svg);
   return b;
 }
 

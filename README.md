@@ -47,7 +47,7 @@ winget install ailio-technologies-inc.tailfuse      # Windows
 # or: cargo install --git https://github.com/ailio-technologies-inc/tailfuse tailfuse-cli
 ```
 
-Or download the app for your platform from [tailfuse.com/download](https://tailfuse.com/download). Tailfuse runs Tailscale's own `tailscaled`, which must be installed.
+Or download the app for your platform from [tailfuse.com/download](https://tailfuse.com/download). The desktop app includes Tailscale's `tailscale` and `tailscaled` binaries, so neither the Tailscale app nor a separate Tailscale installation is needed. A CLI installed from source still uses a system Tailscale installation unless `TAILSCALED_PATH` and `TAILSCALE_PATH` are set.
 
 To set it up with an AI assistant, use the *Set up with AI* button on [tailfuse.com](https://tailfuse.com). It copies a prompt for Claude, ChatGPT or Cursor that installs Tailfuse, writes your config and signs you in to each tailnet. The full reference for assistants is at [tailfuse.com/llms.txt](https://tailfuse.com/llms.txt).
 
@@ -110,14 +110,14 @@ Suffix ownership is strict. Each suffix belongs to exactly one profile, and vali
 
 ## Desktop app
 
-A Tauri menu-bar app (`apps/desktop/`) wraps the same core. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL. It asks once before setting it, and never overwrites a PAC URL it did not set.
+A Tauri menu-bar app (`apps/desktop/`) wraps the same core and bundles its own pinned Tailscale runtime. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL. It asks once before setting it, and never overwrites a PAC URL it did not set.
 
 To set up the phone app, open Settings and choose Set up your phone (or run `tailfuse phone`). The code carries your tailnets, their suffixes and local ports; it never carries passwords, auth keys or the license, so you sign in to each tailnet once on the phone.
 
 The app updates itself. It checks the latest GitHub release's `latest.json` a minute after launch and every six hours, installs a newer version in the background, and relaunches into it once Tailfuse is off, so a session is never cut. Every update is signed with the Tailfuse updater key and verified against the public key built into the app; there is no update server beyond GitHub Releases.
 
 ```sh
-moon run desktop:dev    # develop (npm ci, then tauri dev)
+moon run desktop:dev    # develop (npm ci, build the bundled Tailscale sidecars, then tauri dev)
 scripts/screenshots.sh  # re-take docs/screenshots and the site's hero shots
 ```
 

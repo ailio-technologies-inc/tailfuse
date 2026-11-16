@@ -21,7 +21,7 @@ Tailfuse is made by Ailio Technologies Inc. (https://ailio.ca). It is an indepen
 - The menu-bar app, served from GitHub Releases: https://tailfuse.com/download (picks the platform), or https://tailfuse.com/download/app/macos (universal app, signed and notarized by Apple), /download/app/windows (installer), /download/app/linux (AppImage), /download/app/linux-deb
 - The app updates itself: it checks the latest GitHub release's latest.json every six hours, verifies the update's signature against the key built into the app, and relaunches into it once Tailfuse is off.
 - The command-line tool, as an archive: https://tailfuse.com/download/cli/macos, /download/cli/windows, /download/cli/linux-amd64, /download/cli/linux-arm64
-- The app and the command line both run Tailscale's own `tailscaled`, which must be installed on the machine.
+- The desktop app bundles Tailscale's `tailscale` and `tailscaled`; the Tailscale app and a separate Tailscale installation are optional. A command line installed from source needs Tailscale installed, or `TAILSCALED_PATH` and `TAILSCALE_PATH` set.
 - macOS: `brew install --cask ailio-technologies-inc/tap/tailfuse` (the menu-bar app, notarized; the app can then install the `tailfuse` command from its settings)
 - Windows: `winget install ailio-technologies-inc.tailfuse`
 - From source: `cargo install --git https://github.com/ailio-technologies-inc/tailfuse tailfuse-cli`
@@ -99,7 +99,7 @@ Tools:
 - How do I use multiple Tailscale tailnets at once? The Tailscale app connects to one tailnet at a time. Install Tailfuse, add one profile per tailnet with the hostname suffixes it owns, sign each in once (`tailfuse profile login <name>`), and turn it on (`tailfuse up` or the app's switch). Each tailnet gets its own userspace Tailscale node, and the router on 127.0.0.1:43100 sends each hostname to its tailnet.
 - Does Tailfuse work with Claude or other MCP clients? Yes, through `tailfuse mcp` (see above).
 - Is Tailfuse made by Tailscale? No. It is an independent tool that runs Tailscale's `tailscaled`.
-- Does it replace the Tailscale app? No. An installed Tailscale client keeps its primary tailnet; Tailfuse adds the others beside it.
+- Does it replace the Tailscale app? It can: the desktop app includes its own Tailscale runtime. If the official client is installed, it keeps its primary tailnet and Tailfuse adds the others beside it.
 - Does it change routes or DNS? No. The one system setting it changes is the automatic proxy (PAC) address, with the user's permission.
 - Can a server sign in unattended? Yes: put a Tailscale auth key in that profile's config.
 

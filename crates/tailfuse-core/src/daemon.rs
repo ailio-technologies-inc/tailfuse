@@ -74,11 +74,32 @@ struct SelfJson {
     hostname: Option<String>,
 }
 
-/// Find the tailscaled binary: explicit env override, PATH, then common
-/// install locations (Homebrew, Linux packages, macOS app bundle).
+/// A sidecar shipped beside Tailfuse (Tauri's `externalBin` layout), or a
+/// runtime packaged beside the CLI. It must be a file, not a same-named symlink
+/// to an installed client.
+fn binary_next_to(exe: &Path, name: &str) -> Option<PathBuf> {
+    let path = exe
+        .parent()?
+        .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    std::fs::symlink_metadata(&path)
+        .ok()?
+        .file_type()
+        .is_file()
+        .then_some(path)
+}
+
+fn bundled_binary(name: &str) -> Option<PathBuf> {
+    binary_next_to(&std::env::current_exe().ok()?, name)
+}
+
+/// Find tailscaled for Tailfuse's own profiles: explicit override, the bundled
+/// runtime, then a system installation for source-built CLI installs.
 pub fn find_tailscaled() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TAILSCALED_PATH") {
         return Some(PathBuf::from(p));
+    }
+    if let Some(p) = bundled_binary("tailscaled") {
+        return Some(p);
     }
     for cand in [
         "/opt/homebrew/bin/tailscaled",
@@ -96,10 +117,20 @@ pub fn find_tailscaled() -> Option<PathBuf> {
     which_in_path("tailscaled")
 }
 
+/// Find the CLI used to control Tailfuse's own profile daemons.
 pub fn find_tailscale() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TAILSCALE_PATH") {
         return Some(PathBuf::from(p));
     }
+    if let Some(p) = bundled_binary("tailscale") {
+        return Some(p);
+    }
+    find_system_tailscale()
+}
+
+/// Find the installed client's CLI only for the optional official-app
+/// integration. This must not resolve to Tailfuse's own bundled sidecar.
+fn find_system_tailscale() -> Option<PathBuf> {
     for cand in [
         "/opt/homebrew/bin/tailscale",
         "/usr/local/bin/tailscale",
@@ -144,7 +175,7 @@ impl DaemonSet {
     pub async fn start(cfg: &config::Config) -> Result<Self> {
         cfg.validate()?;
         let tailscaled = find_tailscaled().context(
-            "tailscaled not found — install Tailscale (https://tailscale.com/download) or set TAILSCALED_PATH",
+            "tailscaled not found — reinstall Tailfuse to restore its bundled runtime, or set TAILSCALED_PATH",
         )?;
         let set = Self::default();
         for (index, (name, prof)) in cfg.profiles.iter().enumerate() {
@@ -573,7 +604,7 @@ pub async fn tailscale_cli(socket: &Path, args: &[&str]) -> Result<String> {
 /// machine is logged into (e.g. `tail8e2dc7.ts.net`), or None when the client
 /// is not installed, running or logged in. Used by `profile import`.
 pub async fn detect_official_tailnet_suffix() -> Option<String> {
-    let bin = find_tailscale()?;
+    let bin = find_system_tailscale()?;
     let out = Command::new(bin)
         .args(["status", "--json"])
         .stdin(Stdio::null())
@@ -611,7 +642,7 @@ pub struct OfficialTailscale {
 
 /// `Some` while the official Tailscale client is installed and connected.
 pub async fn official_tailscale() -> Option<OfficialTailscale> {
-    let bin = find_tailscale()?;
+    let bin = find_system_tailscale()?;
     let out = tokio::time::timeout(
         std::time::Duration::from_secs(4),
         Command::new(bin)
@@ -666,7 +697,7 @@ pub async fn set_connected(name: &str, on: bool) -> Result<()> {
 /// Disconnect the official Tailscale client (`tailscale down`). It stays
 /// signed in and can be reconnected from its own menu.
 pub async fn official_tailscale_disconnect() -> Result<()> {
-    let bin = find_tailscale().context("tailscale CLI not found")?;
+    let bin = find_system_tailscale().context("tailscale CLI not found")?;
     let out = Command::new(bin)
         .arg("down")
         .stdin(Stdio::null())
@@ -796,7 +827,7 @@ pub struct SignedIn {
 /// Start the throwaway tailscaled for a sign-in and wait for its socket.
 async fn spawn_signin_daemon(allow_logs: bool) -> Result<Child> {
     let tailscaled = find_tailscaled().context(
-        "tailscaled not found — install Tailscale (https://tailscale.com/download) or set TAILSCALED_PATH",
+        "tailscaled not found — reinstall Tailfuse to restore its bundled runtime, or set TAILSCALED_PATH",
     )?;
     let state_dir = config::profile_state_dir(SIGNIN_SLOT);
     let socket = config::profile_socket(SIGNIN_SLOT);
@@ -985,6 +1016,30 @@ async fn apply_profile_prefs(name: &str, prof: &config::Profile, socket: &Path) 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod binary_tests {
+    use super::binary_next_to;
+
+    #[test]
+    fn finds_only_a_real_sidecar_file() {
+        let root = std::env::temp_dir().join(format!(
+            "tailfuse-sidecar-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let exe = root.join(format!("tailfuse{}", std::env::consts::EXE_SUFFIX));
+        assert!(binary_next_to(&exe, "tailscale").is_none());
+        let sidecar = root.join(format!("tailscale{}", std::env::consts::EXE_SUFFIX));
+        std::fs::write(&sidecar, b"test").unwrap();
+        assert_eq!(binary_next_to(&exe, "tailscale"), Some(sidecar));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg(test)]

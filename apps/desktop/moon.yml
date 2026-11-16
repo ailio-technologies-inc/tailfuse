@@ -14,6 +14,7 @@ fileGroups:
     - 'src-tauri/tauri.conf.json'
     - 'src-tauri/capabilities/**/*'
     - 'src-tauri/icons/**/*'
+    - 'scripts/**/*'
   core:
     - '/crates/tailfuse-core/src/**/*'
     - '/crates/tailfuse-core/Cargo.toml'
@@ -21,9 +22,10 @@ fileGroups:
     - '/Cargo.lock'
 
 tasks:
-  # CI: Rust compile check of the Tauri app (Linux needs webkit2gtk, see ci.yml).
+  # CI: stage sidecars, then compile the app.
+  # Linux needs webkit2gtk, see ci.yml.
   check:
-    command: 'cargo check -p tailfuse-app'
+    script: 'npm run stage:tailscale && cargo check -p tailfuse-app'
     inputs: ['@group(sources)', '@group(core)']
   fmt-check:
     command: 'cargo fmt -p tailfuse-app --check'
