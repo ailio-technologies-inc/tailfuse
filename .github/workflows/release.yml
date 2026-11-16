@@ -65,7 +65,7 @@ jobs:
           npm ci
           npx tauri build --bundles appimage,deb \
             --config "{\"version\":\"$VERSION\"}"
-          mkdir -p ../dist
+          mkdir -p ../../dist
           ASSET="tailfuse-app-${GITHUB_REF_NAME//\//-}-linux-amd64"
           cp ../../target/release/bundle/appimage/*.AppImage \
             "../../dist/${ASSET}.AppImage"
