@@ -1,9 +1,8 @@
 name: Release
 
-# The macOS + Windows lane of tailfuse's release: the Linux CLI assets are built
-# and published by the cluster's dagu lane (infra/bake-host/dags/tailfuse-release.yaml,
-# docs/agents/tailfuse-release.md). Whichever lane runs first creates the
-# release; each uploads only its own assets.
+# The macOS lane of tailfuse's release, plus the Linux menu-bar app. The Linux CLI
+# and the Windows CLI and installer are built by the cluster (infra docs/agents/tailfuse-release.md).
+# Whichever lane runs first creates the release; each uploads only its own assets.
 #
 # Each OS job ships two things: the `tailfuse` CLI archive and the menu-bar app
 # installer (tailfuse-app-<tag>-...: .dmg, -setup.exe, .AppImage, .deb), which is
@@ -90,65 +89,8 @@ jobs:
           # everything above is already uploaded by then.
           gh release upload "${{ github.ref_name }}" --repo "${{ github.repository }}" --clobber tailfuse-app-${{ github.ref_name }}-macos-universal-unsigned.app.tar.gz
 
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-      # Restores the cache that release-cache.yml keeps warm on main (a tag can't
-      # read another tag's cache, only main's). Tags don't save their own.
-      - uses: swatinem/rust-cache@v2
-        with:
-          shared-key: release-windows
-          save-if: false
-      - run: cargo build --release -p tailfuse-cli --target x86_64-pc-windows-msvc
-      - name: Package
-        run: |
-          mkdir dist
-          copy target\x86_64-pc-windows-msvc\release\tailfuse.exe dist\tailfuse.exe
-          Compress-Archive -Path dist\tailfuse.exe -DestinationPath dist\tailfuse-${{ github.ref_name }}-windows-x86_64.zip
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Build the menu-bar app (NSIS installer)
-        env:
-          # Signs the updater artifacts (.sig); the public half is in tauri.conf.json.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          case "$VERSION" in [0-9]*.[0-9]*.[0-9]*) ;; *) VERSION=0.0.0 ;; esac
-          cd apps/desktop
-          npm ci
-          npx tauri build --bundles nsis --config "{\"version\":\"$VERSION\"}"
-          cp ../../target/release/bundle/nsis/*-setup.exe "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-windows-x86_64-setup.exe"
-          cp ../../target/release/bundle/nsis/*-setup.exe.sig "../../dist/tailfuse-app-${GITHUB_REF_NAME//\//-}-windows-x86_64-setup.exe.sig"
-      - uses: actions/upload-artifact@v4
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        with:
-          name: tailfuse-app-windows
-          path: dist/tailfuse-app-*-setup.exe
-      - name: Create release if absent
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" || `
-          gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "tailfuse ${{ github.ref_name }}" --generate-notes
-      - name: Upload Windows assets
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cd dist
-          sha256sum tailfuse-${{ github.ref_name }}-windows-x86_64.zip tailfuse-app-${{ github.ref_name }}-windows-x86_64-setup.exe > SHA256SUMS-windows.txt
-          gh release upload "${{ github.ref_name }}" --repo "${{ github.repository }}" --clobber tailfuse-${{ github.ref_name }}-windows-x86_64.zip tailfuse-app-${{ github.ref_name }}-windows-x86_64-setup.exe tailfuse-app-${{ github.ref_name }}-windows-x86_64-setup.exe.sig SHA256SUMS-windows.txt
-
   # The Linux menu-bar app only. The Linux CLI archives stay on the cluster lane.
+  # Windows CLI and installer moved to the cluster (tailfuse-release-windows).
   build-linux-app:
     runs-on: ubuntu-22.04
     steps:
