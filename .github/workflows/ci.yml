@@ -1,9 +1,10 @@
 name: CI
 
-# Pushes to main: the cluster runs the Linux work (infra's ci-tailfuse and ci-tailfuse-android DAGs,
-# docs/agents/tailfuse-ci.md there) with the same moon targets, reported as the commit statuses
-# cluster/ci and cluster/ci/android. So the Linux jobs here run for pull requests only, which the
-# cluster does not see. macOS and Windows always run here: no cluster host runs either.
+# Pushes to main: the cluster runs the Linux work and the macOS checks (infra's ci-tailfuse,
+# ci-tailfuse-android and ci-tailfuse-macos), reported as cluster/ci, cluster/ci/android and
+# cluster/ci/macos. Those jobs run here for pull requests only. Windows tests stay here: nothing
+# in the cluster runs them. The Windows app check stays too (a native MSVC compile, not the
+# cluster's cargo-xwin clippy).
 
 on:
   push:
@@ -17,8 +18,8 @@ jobs:
   test:
     strategy:
       matrix:
-        # Linux only for pull requests; the cluster covers it on main.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-latest","ubuntu-latest","windows-latest"]' || '["macos-latest","windows-latest"]') }}
+        # Linux and macOS only for pull requests; the cluster covers them on main.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-latest","ubuntu-latest","windows-latest"]' || '["windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +44,8 @@ jobs:
   app:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        # macOS only for pull requests; cluster/ci/macos covers it on main.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-latest","windows-latest"]' || '["windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
