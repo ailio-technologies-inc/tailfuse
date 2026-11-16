@@ -26,23 +26,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
-      - uses: swatinem/rust-cache@v2
-        with:
-          shared-key: release-macos
-      - run: cargo build --release -p tailfuse-cli --target aarch64-apple-darwin
-      - run: cargo build --release -p tailfuse-cli --target x86_64-apple-darwin
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: cd apps/desktop && npm ci && npx tauri build --target universal-apple-darwin --no-bundle
-
   linux-app:
     runs-on: ubuntu-22.04
     steps:
