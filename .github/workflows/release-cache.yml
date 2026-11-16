@@ -43,23 +43,6 @@ jobs:
           node-version: 22
       - run: cd apps/desktop && npm ci && npx tauri build --target universal-apple-darwin --no-bundle
 
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-      - uses: swatinem/rust-cache@v2
-        with:
-          shared-key: release-windows
-      - run: cargo build --release -p tailfuse-cli --target x86_64-pc-windows-msvc
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - shell: bash
-        run: cd apps/desktop && npm ci && npx tauri build --no-bundle
-
   linux-app:
     runs-on: ubuntu-22.04
     steps:
