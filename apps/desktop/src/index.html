@@ -204,6 +204,28 @@
       </section>
     </div>
 
+    <dialog id="options" class="dialog" aria-labelledby="options-title">
+      <form id="options-form" method="dialog" class="dialog-body">
+        <h2 id="options-title">Tailnet options</h2>
+        <label class="field"><span>This device's name</span><input id="o-hostname" type="text" placeholder="leave empty to keep it" /></label>
+        <label class="field"><span>Exit node</span><input id="o-exit" type="text" placeholder="device name, empty for none" /></label>
+        <label class="field"><span>Subnets to share</span><input id="o-routes" type="text" placeholder="10.0.0.0/24, 192.168.1.0/24" /><small>Approve them in the Tailscale admin console.</small></label>
+        <label class="field"><span>Publish (Serve and Funnel)</span><input id="o-serve" type="text" placeholder="443=3000, funnel:8443=http://localhost:8080" /><small>PORT=TARGET; start with funnel: to open it to the internet.</small></label>
+        <label><input id="o-accept" type="checkbox" /> Use subnet routes from other devices</label>
+        <label><input id="o-lan" type="checkbox" /> Keep local network access with an exit node</label>
+        <label><input id="o-adv-exit" type="checkbox" /> Offer this device as an exit node</label>
+        <label><input id="o-ssh" type="checkbox" /> Tailscale SSH server (Linux only)</label>
+        <label><input id="o-shields" type="checkbox" /> Block incoming connections</label>
+        <label class="field"><span>Run a Tailscale command</span><input id="o-cmd" type="text" placeholder="ping 100.74.194.18   ·   netcheck   ·   lock status" /></label>
+        <pre id="o-out" class="mono muted" hidden></pre>
+        <div class="dialog-actions">
+          <button type="button" id="o-run" class="btn btn--secondary btn--sm">Run</button>
+          <button value="cancel" class="btn btn--secondary btn--sm">Close</button>
+          <button type="button" id="o-save" class="btn btn--primary btn--sm">Save</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="permission" class="dialog" aria-labelledby="permission-title">
       <form method="dialog" class="dialog-body">
         <svg class="dialog-mark" viewBox="120 146 272 220" width="40" height="32" aria-hidden="true"><circle cx="150" cy="176" r="27" fill="#eff0f1"/><circle cx="150" cy="256" r="27" fill="#eff0f1"/><circle cx="150" cy="336" r="27" fill="#eff0f1"/><circle cx="214" cy="176" r="27" fill="#eff0f1"/><circle cx="214" cy="336" r="27" fill="#eff0f1"/><circle cx="298" cy="176" r="27" fill="#ff4a1f"/><circle cx="362" cy="176" r="27" fill="#ff4a1f"/><circle cx="298" cy="336" r="27" fill="#ff4a1f"/><circle cx="362" cy="256" r="27" fill="#ff4a1f"/><circle cx="362" cy="336" r="27" fill="#ff4a1f"/><rect x="191" y="229" width="130" height="54" rx="27" fill="#ff4a1f"/></svg>

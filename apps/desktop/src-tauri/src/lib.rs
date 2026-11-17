@@ -1033,6 +1033,82 @@ async fn add_profile(
     Ok(())
 }
 
+/// What the options form edits: everything about a tailnet that is not its name or suffixes.
+#[derive(Serialize, serde::Deserialize)]
+struct ProfileOptions {
+    accept_routes: bool,
+    exit_node: String,
+    hostname: String,
+    advertise_routes: Vec<String>,
+    advertise_exit_node: bool,
+    exit_node_allow_lan_access: bool,
+    ssh: bool,
+    shields_up: bool,
+    serve: Vec<tailfuse_core::config::ServeEntry>,
+}
+
+#[tauri::command]
+async fn get_profile_options(
+    state: State<'_, SharedState>,
+    name: String,
+) -> Result<ProfileOptions, String> {
+    let cfg = state.cfg.lock().await;
+    let p = cfg
+        .profiles
+        .get(&name)
+        .ok_or_else(|| format!("there is no tailnet called {name:?}"))?;
+    Ok(ProfileOptions {
+        accept_routes: p.accept_routes,
+        exit_node: p.exit_node.clone(),
+        hostname: p.hostname.clone(),
+        advertise_routes: p.advertise_routes.clone(),
+        advertise_exit_node: p.advertise_exit_node,
+        exit_node_allow_lan_access: p.exit_node_allow_lan_access,
+        ssh: p.ssh,
+        shields_up: p.shields_up,
+        serve: p.serve.clone(),
+    })
+}
+
+#[tauri::command]
+async fn set_profile_options(
+    state: State<'_, SharedState>,
+    name: String,
+    options: ProfileOptions,
+) -> Result<(), String> {
+    let prof = {
+        let mut cfg = state.cfg.lock().await;
+        let p = cfg
+            .profiles
+            .get_mut(&name)
+            .ok_or_else(|| format!("there is no tailnet called {name:?}"))?;
+        p.accept_routes = options.accept_routes;
+        p.exit_node = options.exit_node.trim().to_string();
+        p.hostname = options.hostname.trim().to_string();
+        p.advertise_routes = options.advertise_routes;
+        p.advertise_exit_node = options.advertise_exit_node;
+        p.exit_node_allow_lan_access = options.exit_node_allow_lan_access;
+        p.ssh = options.ssh;
+        p.shields_up = options.shields_up;
+        p.serve = options.serve;
+        let p = p.clone();
+        cfg.validate().map_err(|e| e.to_string())?;
+        cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+        p
+    };
+    daemon::apply_prefs(&name, &prof)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Any `tailscale` subcommand for a tailnet (ping, whois, netcheck, file, cert, lock…).
+#[tauri::command]
+async fn tailscale_run(name: String, args: Vec<String>) -> Result<String, String> {
+    daemon::tailscale_run(&name, &args)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn remove_profile(state: State<'_, SharedState>, name: String) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
@@ -1474,6 +1550,9 @@ pub fn run() {
             stop,
             login,
             add_profile,
+            get_profile_options,
+            set_profile_options,
+            tailscale_run,
             import_from_tailscale,
             sign_in_new_tailnet,
             disconnect_tailscale_app,

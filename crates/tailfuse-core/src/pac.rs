@@ -1,5 +1,6 @@
-//! PAC file generation: owned suffixes → the tailfuse router, everything
-//! else direct. Served live at `/tailfuse.pac` so the browser always has
+//! PAC file generation: owned suffixes → the tailfuse router; any other name
+//! that resolves to a Tailscale address (100.64.0.0/10) → the router too, which
+//! decides the tailnet and remembers the name; everything else direct. Served live at `/tailfuse.pac` so the browser always has
 //! current routes.
 
 use crate::config::Config;
@@ -13,14 +14,26 @@ pub fn config_suffixes(cfg: &Config) -> Vec<String> {
         .collect()
 }
 
+/// Names matching nothing above: resolve once, and send those that land in the
+/// Tailscale ranges (100.64.0.0/10, fd7a:115c:a1e0::/48) to the router.
+const FALLBACK: &str = "  if (host.indexOf(\".\") > 0 && !/^[0-9.]+$/.test(host) && host.indexOf(\":\") < 0) {\n\
+    var c = FindProxyForURL.cache || (FindProxyForURL.cache = {});\n\
+    if (!(host in c)) {\n\
+      var ip = dnsResolve(host);\n\
+      c[host] = !!ip && (isInNet(ip, \"100.64.0.0\", \"255.192.0.0\") || ip.indexOf(\"fd7a:115c:a1e0:\") == 0);\n\
+    }\n\
+    if (c[host]) return PROXY_ADDR;\n\
+  }\n";
+
 pub fn generate(cfg: &Config, proxy_addr: &str) -> String {
     generate_from(&config_suffixes(cfg), &[], &[], proxy_addr)
 }
 
 /// A PAC for these domains (each also matching its subdomains), these exact
 /// hosts and these Tailscale addresses (matched only when the URL uses the
-/// address itself). Every check is a string comparison: the PAC never makes the
-/// browser look a name up, so ordinary browsing pays nothing for it.
+/// address itself). Those checks are string comparisons. Only a name matching
+/// none of them is looked up once (the answer is cached in the PAC), to catch
+/// public DNS names that point at a tailnet device, such as `ailio.dev`.
 pub fn generate_from(
     suffixes: &[String],
     hosts: &[String],
@@ -56,11 +69,12 @@ pub fn generate_from(
             conds.join(" ||\n      ")
         )
     };
+    let fallback = FALLBACK.replace("PROXY_ADDR", &format!("\"SOCKS5 {proxy_addr}\""));
     format!(
         "// tailfuse PAC: generated; served live at http://{proxy_addr}/tailfuse.pac\n\
          function FindProxyForURL(url, host) {{\n  \
          host = host.toLowerCase().replace(/^\\[|\\]$/g, \"\");\n\
-         {check}  return \"DIRECT\";\n}}\n"
+         {check}{fallback}  return \"DIRECT\";\n}}\n"
     )
 }
 
@@ -82,6 +96,9 @@ mod tests {
         assert!(pac.contains("dnsDomainIs(host, \".work.ts.net\")"));
         assert!(pac.contains("SOCKS5 127.0.0.1:43100"));
         assert!(pac.contains("DIRECT"));
+        // Unlisted names that resolve into the Tailscale range still reach the router.
+        assert!(pac.contains("isInNet(ip, \"100.64.0.0\", \"255.192.0.0\")"));
+        assert!(pac.contains("if (c[host]) return \"SOCKS5 127.0.0.1:43100\";"));
     }
 }
 

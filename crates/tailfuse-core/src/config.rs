@@ -57,6 +57,14 @@ impl Default for Profile {
             ephemeral: false,
             account: String::new(),
             tailscale_logs: false,
+            hostname: String::new(),
+            advertise_routes: Vec::new(),
+            advertise_exit_node: false,
+            exit_node_allow_lan_access: false,
+            ssh: false,
+            shields_up: false,
+            advertise_tags: Vec::new(),
+            serve: Vec::new(),
         }
     }
 }
@@ -90,6 +98,48 @@ pub struct Profile {
     /// without `--no-logs-no-support`. Set by the app's browser sign-in.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tailscale_logs: bool,
+    /// Name this node registers with (`tailscale set --hostname`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub hostname: String,
+    /// Subnets this node routes for the tailnet (`--advertise-routes`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub advertise_routes: Vec<String>,
+    /// Offer this node as an exit node (`--advertise-exit-node`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub advertise_exit_node: bool,
+    /// Keep LAN access while an exit node is in use.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exit_node_allow_lan_access: bool,
+    /// Run the Tailscale SSH server (`--ssh`; Linux nodes only).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ssh: bool,
+    /// Block incoming connections from the tailnet (`--shields-up`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shields_up: bool,
+    /// ACL tags to request (`tag:name`), applied at login with an auth key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub advertise_tags: Vec<String>,
+    /// Local services published with `tailscale serve` / `funnel`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub serve: Vec<ServeEntry>,
+}
+
+/// One `tailscale serve` (tailnet only) or `funnel` (public internet) mapping.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ServeEntry {
+    /// HTTPS port on the node: 443, 8443 or 10000 (the ones Funnel allows).
+    #[serde(default = "default_serve_port")]
+    pub port: u16,
+    /// What to publish: `3000`, `http://localhost:3000`, `https+insecure://…`,
+    /// `tcp://localhost:22` or a file or directory path.
+    pub target: String,
+    /// Expose on the public internet through Funnel instead of the tailnet only.
+    #[serde(default)]
+    pub funnel: bool,
+}
+
+fn default_serve_port() -> u16 {
+    443
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

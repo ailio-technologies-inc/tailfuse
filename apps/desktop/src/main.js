@@ -169,6 +169,7 @@ function profileEntry(p, up) {
     ),
     h("div", { class: "entry-actions" },
       h("span", { class: `state ${tone}` }, label),
+      h("button", { class: "btn btn--secondary btn--sm", type: "button", "data-options": p.name }, "Options"),
       needsSignIn
         ? h("button", { class: "btn btn--primary btn--sm", type: "button", "data-login": p.name }, "Sign in")
         : h("label", { class: "switch switch--sm", title: p.online ? `Disconnect ${p.name}` : `Connect ${p.name}` },
@@ -193,6 +194,72 @@ function tunnelEntry(t) {
     ),
     h("div", { class: "entry-actions" }, removeButton("tunnel", t.name)),
   );
+}
+
+// Tailnet options: what `tailscale set`, `serve` and `funnel` manage, saved to the config and
+// applied to the running node. Lists are typed as comma-separated text.
+let optionsFor = null;
+const csv = (v) => v.split(",").map((x) => x.trim()).filter(Boolean);
+
+function parseServe(text) {
+  return csv(text).map((spec) => {
+    const funnel = spec.startsWith("funnel:");
+    const [port, ...rest] = (funnel ? spec.slice(7) : spec).split("=");
+    const target = rest.join("=");
+    if (!target || !Number.isInteger(Number(port))) throw new Error(`"${spec}" should look like 443=3000`);
+    return { port: Number(port), target, funnel };
+  });
+}
+
+async function openOptions(name) {
+  const o = await call("get_profile_options", { name }).catch(() => null);
+  if (!o) return;
+  optionsFor = name;
+  $("#options-title").textContent = `Options for ${name}`;
+  $("#o-hostname").value = o.hostname;
+  $("#o-exit").value = o.exit_node;
+  $("#o-routes").value = o.advertise_routes.join(", ");
+  $("#o-serve").value = o.serve.map((e) => `${e.funnel ? "funnel:" : ""}${e.port}=${e.target}`).join(", ");
+  $("#o-accept").checked = o.accept_routes;
+  $("#o-lan").checked = o.exit_node_allow_lan_access;
+  $("#o-adv-exit").checked = o.advertise_exit_node;
+  $("#o-ssh").checked = o.ssh;
+  $("#o-shields").checked = o.shields_up;
+  $("#o-out").hidden = true;
+  $("#options").showModal();
+}
+
+async function saveOptions() {
+  try {
+    const options = {
+      accept_routes: $("#o-accept").checked,
+      exit_node: $("#o-exit").value,
+      hostname: $("#o-hostname").value,
+      advertise_routes: csv($("#o-routes").value),
+      advertise_exit_node: $("#o-adv-exit").checked,
+      exit_node_allow_lan_access: $("#o-lan").checked,
+      ssh: $("#o-ssh").checked,
+      shields_up: $("#o-shields").checked,
+      serve: parseServe($("#o-serve").value),
+    };
+    await call("set_profile_options", { name: optionsFor, options });
+    $("#options").close();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function runTailscale() {
+  const out = $("#o-out");
+  const args = $("#o-cmd").value.trim().split(/\s+/).filter(Boolean);
+  if (!args.length) return;
+  out.hidden = false;
+  out.textContent = "Running…";
+  try {
+    out.textContent = (await invoke("tailscale_run", { name: optionsFor, args })).trim() || "Done.";
+  } catch (err) {
+    out.textContent = sentence(err);
+  }
 }
 
 let licenseFormOpen = false;
@@ -382,6 +449,8 @@ if (!invoke) {
     }
     if (target.id === "show-add-tunnel") return toggleForm("add-tunnel", true);
 
+    if (target.dataset.options) return openOptions(target.dataset.options);
+
     if (target.dataset.login) {
       await call("login", { name: target.dataset.login }).catch(() => {});
       return refresh();
@@ -548,6 +617,15 @@ if (!invoke) {
         : `${host} is on none of your tailnets. Tailfuse leaves it alone, and your apps reach it directly.`;
     } catch (err) {
       out.textContent = sentence(err);
+    }
+  });
+
+  $("#o-save").addEventListener("click", saveOptions);
+  $("#o-run").addEventListener("click", runTailscale);
+  $("#o-cmd").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      runTailscale();
     }
   });
 

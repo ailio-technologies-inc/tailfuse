@@ -600,6 +600,24 @@ pub async fn tailscale_cli(socket: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// Run the real `tailscale` CLI against one profile's node with the terminal
+/// attached (prompts, progress, file transfers, `web`), returning its exit code.
+/// This is how every Tailscale subcommand works against a Tailfuse profile.
+pub fn tailscale_exec(profile: &str, args: &[String]) -> Result<i32> {
+    let socket = config::profile_socket(profile);
+    if !socket.exists() {
+        bail!("profile {profile:?} is not running — start `tailfuse up` first");
+    }
+    let bin = find_tailscale().context("tailscale CLI not found")?;
+    let status = std::process::Command::new(bin)
+        .arg("--socket")
+        .arg(&socket)
+        .args(args)
+        .status()
+        .context("running tailscale CLI")?;
+    Ok(status.code().unwrap_or(1))
+}
+
 /// The MagicDNS suffix of the tailnet the official Tailscale client on this
 /// machine is logged into (e.g. `tail8e2dc7.ts.net`), or None when the client
 /// is not installed, running or logged in. Used by `profile import`.
@@ -726,11 +744,12 @@ pub async fn login_start(cfg: &config::Config, name: &str) -> Result<Option<Stri
         bail!("profile {name:?} is not running — start `tailfuse up` first");
     }
     if !prof.auth_key.is_empty() {
-        tailscale_cli(
-            &socket,
-            &["up", "--auth-key", &prof.auth_key, "--accept-dns=false"],
-        )
-        .await?;
+        let tags = format!("--advertise-tags={}", prof.advertise_tags.join(","));
+        let mut args = vec!["up", "--auth-key", &prof.auth_key, "--accept-dns=false"];
+        if !prof.advertise_tags.is_empty() {
+            args.push(&tags);
+        }
+        tailscale_cli(&socket, &args).await?;
         return Ok(None);
     }
     begin_browser_login(&socket).await
@@ -980,8 +999,99 @@ pub async fn login(cfg: &config::Config, name: &str) -> Result<Option<String>> {
     Ok(url)
 }
 
-/// Best-effort application of accept_routes / exit_node on an already-auth'd profile.
+/// The `tailscale set` flags a profile manages. Booleans are always sent so that
+/// turning an option off in the config really turns it off; strings and lists
+/// are sent only when set, so an unconfigured profile leaves them alone.
+pub fn pref_flags(prof: &config::Profile) -> Vec<String> {
+    let mut f = vec![
+        format!("--advertise-exit-node={}", prof.advertise_exit_node),
+        format!(
+            "--exit-node-allow-lan-access={}",
+            prof.exit_node_allow_lan_access
+        ),
+        format!("--shields-up={}", prof.shields_up),
+        format!("--ssh={}", prof.ssh),
+    ];
+    if !prof.hostname.is_empty() {
+        f.push(format!("--hostname={}", prof.hostname));
+    }
+    // Routes are replaced as a set; clearing them needs the flag with no value.
+    f.push(format!(
+        "--advertise-routes={}",
+        prof.advertise_routes.join(",")
+    ));
+    f
+}
+
+/// The `tailscale serve|funnel` invocations for a profile's published services.
+pub fn serve_commands(prof: &config::Profile) -> Vec<Vec<String>> {
+    prof.serve
+        .iter()
+        .map(|e| {
+            let kind = if e.funnel { "funnel" } else { "serve" };
+            let mut c = vec![kind.to_string(), "--bg".to_string()];
+            match e.target.split_once("://").map(|(s, _)| s) {
+                Some("tcp") => c.push(format!("--tcp={}", e.port)),
+                Some("tls-terminated-tcp") => c.push(format!("--tls-terminated-tcp={}", e.port)),
+                _ => c.push(format!("--https={}", e.port)),
+            }
+            c.push(e.target.clone());
+            c
+        })
+        .collect()
+}
+
+/// Apply a profile's settings to its running node now (no restart needed).
+pub async fn apply_prefs(name: &str, prof: &config::Profile) -> Result<()> {
+    let socket = config::profile_socket(name);
+    if !socket.exists() {
+        return Ok(()); // not running: applied when it starts
+    }
+    apply_profile_prefs(name, prof, &socket).await
+}
+
+/// Run one `tailscale` subcommand against a profile's node and return its output.
+pub async fn tailscale_run(name: &str, args: &[String]) -> Result<String> {
+    let socket = config::profile_socket(name);
+    if !socket.exists() {
+        bail!("{name} is not running; turn Tailfuse on first");
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        tailscale_cli(&socket, &refs),
+    )
+    .await
+    .context("Tailscale took too long to answer")?
+}
+
+/// Best-effort application of the profile's settings on an already-auth'd node.
 async fn apply_profile_prefs(name: &str, prof: &config::Profile, socket: &Path) -> Result<()> {
+    let mut set = vec!["set".to_string()];
+    set.extend(pref_flags(prof));
+    let refs: Vec<&str> = set.iter().map(String::as_str).collect();
+    if let Err(e) = tailscale_cli(socket, &refs).await {
+        // e.g. --ssh is refused on macOS and Windows; keep the other settings.
+        tracing::warn!(
+            profile = name,
+            "tailscale set failed: {e:#}; retrying without ssh"
+        );
+        let retry: Vec<&str> = refs
+            .iter()
+            .copied()
+            .filter(|a| !a.starts_with("--ssh"))
+            .collect();
+        let _ = tailscale_cli(socket, &retry).await;
+    }
+    if !prof.serve.is_empty() {
+        let _ = tailscale_cli(socket, &["serve", "reset"]).await;
+        for cmd in serve_commands(prof) {
+            let refs: Vec<&str> = cmd.iter().map(String::as_str).collect();
+            if let Err(e) = tailscale_cli(socket, &refs).await {
+                tracing::warn!(profile = name, ?cmd, "serve failed: {e:#}");
+            }
+        }
+    }
     if prof.accept_routes {
         let _ = tailscale_cli(socket, &["set", "--accept-routes"]).await;
     }
@@ -1016,6 +1126,53 @@ async fn apply_profile_prefs(name: &str, prof: &config::Profile, socket: &Path) 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod pref_tests {
+    use super::{pref_flags, serve_commands};
+    use crate::config::{Profile, ServeEntry};
+
+    #[test]
+    fn flags_are_declarative_for_booleans_and_routes() {
+        let mut p = Profile::default();
+        let f = pref_flags(&p);
+        assert!(f.contains(&"--advertise-exit-node=false".to_string()));
+        assert!(f.contains(&"--advertise-routes=".to_string()));
+        assert!(!f.iter().any(|a| a.starts_with("--hostname")));
+        p.advertise_routes = vec!["10.0.0.0/24".into(), "192.168.1.0/24".into()];
+        p.hostname = "edge".into();
+        p.ssh = true;
+        let f = pref_flags(&p);
+        assert!(f.contains(&"--advertise-routes=10.0.0.0/24,192.168.1.0/24".to_string()));
+        assert!(f.contains(&"--hostname=edge".to_string()));
+        assert!(f.contains(&"--ssh=true".to_string()));
+    }
+
+    #[test]
+    fn serve_and_funnel_commands() {
+        let p = Profile {
+            serve: vec![
+                ServeEntry {
+                    port: 443,
+                    target: "http://localhost:3000".into(),
+                    funnel: true,
+                },
+                ServeEntry {
+                    port: 2222,
+                    target: "tcp://localhost:22".into(),
+                    funnel: false,
+                },
+            ],
+            ..Default::default()
+        };
+        let c = serve_commands(&p);
+        assert_eq!(
+            c[0],
+            ["funnel", "--bg", "--https=443", "http://localhost:3000"]
+        );
+        assert_eq!(c[1], ["serve", "--bg", "--tcp=2222", "tcp://localhost:22"]);
+    }
 }
 
 #[cfg(test)]

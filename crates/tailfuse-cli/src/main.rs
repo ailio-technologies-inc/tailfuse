@@ -48,6 +48,44 @@ enum Commands {
     Run { command: Vec<String> },
     /// SSH to a host through the profile that owns it.
     Ssh { target: String, args: Vec<String> },
+    /// Run any `tailscale` subcommand against a profile's node
+    /// (e.g. `tailfuse ts work netcheck`, `tailfuse ts work lock status`).
+    #[command(name = "ts")]
+    Ts {
+        profile: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        args: Vec<String>,
+    },
+    /// Taildrop: send or receive files (`file work cp ./a.txt host:`, `file work get .`).
+    File {
+        profile: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        args: Vec<String>,
+    },
+    /// Get a Let's Encrypt certificate for a node's MagicDNS name.
+    Cert {
+        profile: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        args: Vec<String>,
+    },
+    /// Tailnet lock (`lock work status`, `lock work sign …`).
+    Lock {
+        profile: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Ping a tailnet device (shows direct vs relayed path).
+    Ping {
+        profile: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        args: Vec<String>,
+    },
+    /// Who is behind a tailnet IP.
+    Whois {
+        profile: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        args: Vec<String>,
+    },
     /// Print the PAC URL and serve it (manual browser setup).
     ServePac,
     /// Run an MCP server on stdio, for AI assistants (e.g. `claude mcp add tailfuse -- tailfuse mcp`).
@@ -78,6 +116,17 @@ enum Commands {
     },
 }
 
+/// Run `tailscale [verb] args…` against one profile's node and exit with its code.
+fn passthrough(profile: &str, verb: Option<&str>, args: Vec<String>) -> Result<()> {
+    let cfg = config::load(&flag_config_path()?)?;
+    if !cfg.profiles.contains_key(profile) {
+        bail!("no such profile {profile:?}");
+    }
+    let full: Vec<String> = verb.map(String::from).into_iter().chain(args).collect();
+    let code = daemon::tailscale_exec(profile, &full)?;
+    std::process::exit(code);
+}
+
 #[derive(Subcommand)]
 enum ProfileAction {
     /// List profiles and their suffixes.
@@ -100,6 +149,30 @@ enum ProfileAction {
         /// Ephemeral node (removed from tailnet on logout).
         #[arg(long)]
         ephemeral: bool,
+        /// Name this node registers with.
+        #[arg(long)]
+        hostname: Option<String>,
+        /// Subnet to route for the tailnet (repeatable).
+        #[arg(long = "advertise-routes")]
+        advertise_routes: Vec<String>,
+        /// Offer this node as an exit node.
+        #[arg(long)]
+        advertise_exit_node: bool,
+        /// Keep LAN access while using an exit node.
+        #[arg(long)]
+        exit_node_allow_lan_access: bool,
+        /// Run the Tailscale SSH server (Linux only).
+        #[arg(long)]
+        ssh: bool,
+        /// Block incoming connections from the tailnet.
+        #[arg(long)]
+        shields_up: bool,
+        /// ACL tag to request with the auth key (repeatable, e.g. tag:server).
+        #[arg(long = "advertise-tags")]
+        advertise_tags: Vec<String>,
+        /// Publish a service: [funnel:]PORT=TARGET, e.g. 443=3000 or funnel:443=http://localhost:3000 (repeatable).
+        #[arg(long = "serve")]
+        serve: Vec<String>,
     },
     /// Remove a profile (keeps tailnet node state on disk).
     Remove { name: String },
@@ -177,6 +250,12 @@ async fn main() -> Result<()> {
             tokio::task::spawn_blocking(move || mcp::serve(path)).await?
         }
         Commands::Phone => cmd_phone(),
+        Commands::Ts { profile, args } => passthrough(&profile, None, args),
+        Commands::File { profile, args } => passthrough(&profile, Some("file"), args),
+        Commands::Cert { profile, args } => passthrough(&profile, Some("cert"), args),
+        Commands::Lock { profile, args } => passthrough(&profile, Some("lock"), args),
+        Commands::Ping { profile, args } => passthrough(&profile, Some("ping"), args),
+        Commands::Whois { profile, args } => passthrough(&profile, Some("whois"), args),
         Commands::Test { hostname } => cmd_test(&hostname),
         Commands::Env => cmd_env(),
         Commands::Run { command } => cmd_run(command).await,
@@ -513,9 +592,34 @@ async fn cmd_profile(action: ProfileAction) -> Result<()> {
             exit_node,
             auth_key,
             ephemeral,
+            hostname,
+            advertise_routes,
+            advertise_exit_node,
+            exit_node_allow_lan_access,
+            ssh,
+            shields_up,
+            advertise_tags,
+            serve,
         } => {
             if cfg.profiles.contains_key(&name) {
                 bail!("profile {name:?} already exists");
+            }
+            let mut entries = Vec::new();
+            for spec in &serve {
+                let (funnel, rest) = match spec.strip_prefix("funnel:") {
+                    Some(r) => (true, r),
+                    None => (false, spec.as_str()),
+                };
+                let (port, target) = rest
+                    .split_once('=')
+                    .with_context(|| format!("--serve {spec:?}: expected [funnel:]PORT=TARGET"))?;
+                entries.push(tailfuse_core::config::ServeEntry {
+                    port: port
+                        .parse()
+                        .with_context(|| format!("--serve {spec:?}: bad port"))?,
+                    target: target.to_string(),
+                    funnel,
+                });
             }
             cfg.profiles.insert(
                 name.clone(),
@@ -525,6 +629,14 @@ async fn cmd_profile(action: ProfileAction) -> Result<()> {
                     exit_node: exit_node.unwrap_or_default(),
                     auth_key: auth_key.unwrap_or_default(),
                     ephemeral,
+                    hostname: hostname.unwrap_or_default(),
+                    advertise_routes,
+                    advertise_exit_node,
+                    exit_node_allow_lan_access,
+                    ssh,
+                    shields_up,
+                    advertise_tags,
+                    serve: entries,
                     ..Default::default()
                 },
             );
