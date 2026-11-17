@@ -138,6 +138,7 @@ export function AboutSection() {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14 }}>
             <LinkButton title="tailfuse.com" onPress={open("https://tailfuse.com")} />
             <LinkButton title="Privacy" onPress={open("https://tailfuse.com/privacy")} />
+            <LinkButton title="Terms" onPress={open("https://tailfuse.com/terms")} />
             <LinkButton title="Release notes" onPress={open("https://github.com/ailio-technologies-inc/tailfuse/releases")} />
           </View>
         </View>
