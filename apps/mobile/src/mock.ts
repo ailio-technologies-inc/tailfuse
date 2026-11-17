@@ -23,6 +23,7 @@ let allAppsError = query.has("allappserror") ? "no utun file descriptor in this 
 const FREE = 2;
 let seq = 0;
 let listeners = new Set<(kind: string) => void>();
+const waiting: { name: string; size: number }[] = [{ name: "boarding-pass.pdf", size: 184320 }];
 const pending: Pending[] = [];
 
 function profile(name: string, account: string, suffix: string, host: string, n: number): Profile {
@@ -357,6 +358,30 @@ function run(cmd: string, a: Args): unknown {
       allApps = a.on;
       allAppsError = "";
       return null;
+    case "file_targets": {
+      needsUp();
+      const p = byName(a.name);
+      if (!p.online) throw new Error(`tailnet "${p.name}" is not connected`);
+      return [{ name: "macbook", dns_name: `macbook${p.suffixes[0] ?? ".ts.net"}`, id: "nMOCK1" }];
+    }
+    case "send_file": {
+      needsUp();
+      if (!String(a.target ?? "")) throw new Error("bad arguments: target is required");
+      return null;
+    }
+    case "waiting_files": {
+      needsUp();
+      byName(a.name);
+      return waiting.map((f) => ({ ...f }));
+    }
+    case "receive_file": {
+      needsUp();
+      byName(a.name);
+      const i = waiting.findIndex((f) => f.name === a.file);
+      if (i < 0) throw new Error(`no waiting file "${String(a.file)}"`);
+      waiting.splice(i, 1);
+      return { path: `${String(a.dest_dir)}/${String(a.file)}` };
+    }
     case "devices": {
       needsUp();
       const p = byName(a.name);

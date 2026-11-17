@@ -56,6 +56,10 @@ export type SyncResult = {
   skipped: { name: string; reason: string }[];
 };
 
+/** A device that can be sent files (Taildrop); `id` is `send_file`'s target. */
+export type FileTarget = { name: string; dns_name: string; id: string };
+export type WaitingFile = { name: string; size: number };
+
 export type Device = { name: string; dns_name: string; ips: string[]; os: string; online: boolean; self?: boolean };
 
 /** One page of `devices`; totals count every device on the tailnet, this one included. */

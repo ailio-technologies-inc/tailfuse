@@ -28,7 +28,9 @@ module="$(cd "$engine/../../apps/mobile" && pwd)/modules/tailfuse-engine"
 # Tailscale features the engine does not use, left out of the binary (smaller
 # code, less memory). Kept on purpose: netstack, dns, health, logtail/netlog
 # (a tailnet may require logging), c2n, posture, tailnetlock, useroutes,
-# useexitnode, peerapiclient, portmapper/nattraversal/udptransport (direct
+# useexitnode, peerapiclient, taildrop and peerapiserver (Taildrop: sending and
+# receiving files; adds about 100 KB, and its memory in the iOS tunnel has to be
+# checked on a device), portmapper/nattraversal/udptransport (direct
 # connections), ipnbus, serve and acme (tsnet needs both to compile).
 # useproxy is left out so the nodes never send their own traffic to the
 # system HTTP proxy, which on the phone is Tailfuse's own router.
@@ -38,9 +40,9 @@ omit=(
 	conn25 connreject dbus debug debugeventbus debugportmapper desktop_sessions
 	dnsresolvecache doctor drive favorites flashappliance gro hujsonconf
 	identityfederation iptables kube linkspeed linuxdnsfight listenrawdisco
-	networkmanager oauthkey osrouter outboundproxy peerapiserver portlist qrcodes
+	networkmanager oauthkey osrouter outboundproxy portlist qrcodes
 	relayserver remoteconfig resolved runtimemetrics sdnotify serviceclientprefs ssh
-	synology syslog systray taildrop tap tpm tundevstats unixsocketidentity useproxy
+	synology syslog systray tap tpm tundevstats unixsocketidentity useproxy
 	wakeonlan webbrowser webclient
 )
 tags="$(printf 'ts_omit_%s,' "${omit[@]}")"

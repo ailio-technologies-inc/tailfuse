@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -126,6 +127,7 @@ type fakeNode struct {
 	learnDom []string
 	prefs    []Prefs // every SetPrefs call, newest last
 	prefsErr error   // returned by SetPrefs while set (e.g. exit node not known yet)
+	ff       *fakeFiles
 }
 
 func (n *fakeNode) SetPrefs(ctx context.Context, p Prefs) error {
@@ -135,6 +137,69 @@ func (n *fakeNode) SetPrefs(ctx context.Context, p Prefs) error {
 		return n.prefsErr
 	}
 	n.prefs = append(n.prefs, p)
+	return nil
+}
+
+// Taildrop on the fake node: devices it can send to, what it was sent, and
+// files waiting for it.
+type fakeFiles struct {
+	targets []FileTarget
+	sent    map[string][]byte // target+"/"+name -> bytes
+	waiting map[string][]byte
+}
+
+func (n *fakeNode) files() *fakeFiles {
+	if n.ff == nil {
+		n.ff = &fakeFiles{sent: map[string][]byte{}, waiting: map[string][]byte{}}
+	}
+	return n.ff
+}
+
+func (n *fakeNode) FileTargets(ctx context.Context) ([]FileTarget, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.files().targets, nil
+}
+
+func (n *fakeNode) SendFile(ctx context.Context, target, name string, size int64, r io.Reader) error {
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	if int64(len(b)) != size {
+		return fmt.Errorf("sent %d bytes, expected %d", len(b), size)
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.files().sent[target+"/"+name] = b
+	return nil
+}
+
+func (n *fakeNode) WaitingFiles(ctx context.Context) ([]WaitingFile, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var out []WaitingFile
+	for name, b := range n.files().waiting {
+		out = append(out, WaitingFile{Name: name, Size: int64(len(b))})
+	}
+	return out, nil
+}
+
+func (n *fakeNode) ReceiveFile(ctx context.Context, name string, w io.Writer) error {
+	n.mu.Lock()
+	b, ok := n.files().waiting[name]
+	n.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no waiting file %q", name)
+	}
+	_, err := w.Write(b)
+	return err
+}
+
+func (n *fakeNode) DeleteWaitingFile(ctx context.Context, name string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	delete(n.files().waiting, name)
 	return nil
 }
 

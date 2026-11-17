@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/tailcfg"
 	"tailscale.com/tsnet"
 )
 
@@ -318,4 +320,73 @@ func (n *tsNode) Learn(ctx context.Context) ([]netip.Addr, []string, error) {
 		search = dc.Domains
 	}
 	return ips, ServedDomains(routes, search), nil
+}
+
+// Taildrop, through the node's local API. Needs the engine built with the
+// taildrop and peerapiserver features (scripts/build-engine.sh).
+
+func (n *tsNode) FileTargets(ctx context.Context) ([]FileTarget, error) {
+	_, lc, err := n.get()
+	if err != nil {
+		return nil, err
+	}
+	ts, err := lc.FileTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FileTarget, 0, len(ts))
+	for _, t := range ts {
+		if t.Node == nil {
+			continue
+		}
+		label, _, _ := strings.Cut(strings.TrimSuffix(t.Node.Name, "."), ".")
+		out = append(out, FileTarget{Name: label, DNSName: strings.TrimSuffix(t.Node.Name, "."), ID: string(t.Node.StableID)})
+	}
+	return out, nil
+}
+
+func (n *tsNode) SendFile(ctx context.Context, target, name string, size int64, r io.Reader) error {
+	_, lc, err := n.get()
+	if err != nil {
+		return err
+	}
+	return lc.PushFile(ctx, tailcfg.StableNodeID(target), size, name, r)
+}
+
+func (n *tsNode) WaitingFiles(ctx context.Context) ([]WaitingFile, error) {
+	_, lc, err := n.get()
+	if err != nil {
+		return nil, err
+	}
+	ws, err := lc.WaitingFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WaitingFile, 0, len(ws))
+	for _, w := range ws {
+		out = append(out, WaitingFile{Name: w.Name, Size: w.Size})
+	}
+	return out, nil
+}
+
+func (n *tsNode) ReceiveFile(ctx context.Context, name string, w io.Writer) error {
+	_, lc, err := n.get()
+	if err != nil {
+		return err
+	}
+	rc, _, err := lc.GetWaitingFile(ctx, name)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	_, err = io.Copy(w, rc)
+	return err
+}
+
+func (n *tsNode) DeleteWaitingFile(ctx context.Context, name string) error {
+	_, lc, err := n.get()
+	if err != nil {
+		return err
+	}
+	return lc.DeleteWaitingFile(ctx, name)
 }

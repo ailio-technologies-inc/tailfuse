@@ -1146,6 +1146,46 @@ func (e *Engine) dispatch(req Request) (any, error) {
 			return nil, err
 		}
 		return e.Devices(a)
+	case "file_targets":
+		var a struct {
+			Name string `json:"name"`
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return nil, err
+		}
+		return e.FileTargets(a.Name)
+	case "send_file":
+		var a struct {
+			Name   string `json:"name"`
+			Target string `json:"target"`
+			Path   string `json:"path"`
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return nil, err
+		}
+		return nil, e.SendFile(a.Name, a.Target, a.Path)
+	case "waiting_files":
+		var a struct {
+			Name string `json:"name"`
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return nil, err
+		}
+		return e.WaitingFiles(a.Name)
+	case "receive_file":
+		var a struct {
+			Name    string `json:"name"`
+			File    string `json:"file"`
+			DestDir string `json:"dest_dir"`
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return nil, err
+		}
+		path, err := e.ReceiveFile(a.Name, a.File, a.DestDir)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"path": path}, nil
 	case "import_setup":
 		var a struct {
 			Link   string `json:"link"`

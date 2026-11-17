@@ -2,7 +2,7 @@
 // otherwise. Every call parses {ok,result,error} and throws Error(error) on failure.
 import * as Native from "../modules/tailfuse-engine";
 import { mock } from "./mock";
-import type { DevicePage, Prefs, State, SyncResult, TestHostResult } from "./types";
+import type { DevicePage, FileTarget, Prefs, State, WaitingFile, SyncResult, TestHostResult } from "./types";
 
 export const usingMock = !Native.isAvailable;
 
@@ -40,6 +40,10 @@ export const importSetup = (link: string, dryRun = false) => run<SyncResult>("im
 export const addDomain = (name: string, domain: string) => run<null>("add_domain", { name, domain });
 export const removeDomain = (name: string, domain: string) => run<null>("remove_domain", { name, domain });
 export const setOptions = (name: string, prefs: Prefs) => run<null>("set_options", { name, ...prefs });
+export const fileTargets = (name: string) => run<FileTarget[]>("file_targets", { name });
+export const sendFile = (name: string, target: string, path: string) => run<null>("send_file", { name, target, path });
+export const waitingFiles = (name: string) => run<WaitingFile[]>("waiting_files", { name });
+export const receiveFile = (name: string, file: string, destDir: string) => run<{ path: string }>("receive_file", { name, file, dest_dir: destDir });
 export const setUnlocked = (on: boolean) => run<null>("set_unlocked", { on });
 export const setAllApps = (on: boolean) => run<null>("set_all_apps", { on });
 export const start = () => backend.start();

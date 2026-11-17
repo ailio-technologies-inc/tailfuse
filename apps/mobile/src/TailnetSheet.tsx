@@ -1,4 +1,6 @@
 import { memo, useCallback, useEffect, useReducer, useRef, useState } from "react";
+import * as DocumentPicker from "expo-document-picker";
+import { Directory, Paths } from "expo-file-system";
 import { ActivityIndicator, FlatList, Linking, Platform, Pressable, Share, View } from "react-native";
 
 import { Button, Card, ChevronIcon, CopyIcon, Field, Hint, Pane, SearchField, SuffixLine, Switch, T } from "./components";
@@ -8,7 +10,7 @@ import { DEVICE_PAGE, DEVICE_ROW_HEIGHT, DEVICE_SEARCH_DEBOUNCE_MS, DOMAIN_CAP, 
 import { deviceWord } from "./platform";
 import { Sheet } from "./Sheet";
 import { colors, hairline } from "./theme";
-import type { Device, Prefs, Profile } from "./types";
+import type { Device, FileTarget, Prefs, Profile, WaitingFile } from "./types";
 import { useCopied } from "./useCopied";
 
 type Props = {
@@ -120,6 +122,89 @@ const DeviceRow = memo(function DeviceRow({ d, copied, thisLabel, onPress }: { d
 
 const getItemLayout = (_: ArrayLike<Device> | null | undefined, index: number) => ({ length: ROW_H, offset: ROW_H * index, index });
 const keyOf = (d: Device) => d.dns_name || d.name;
+
+// Taildrop: files other devices sent here (Save) and devices this one can send to. Files are kept in
+// the app's own Taildrop folder, and on iOS handed to the share sheet so they can go anywhere.
+function TaildropPane({ name }: { name: string }) {
+  const [targets, setTargets] = useState<FileTarget[]>([]);
+  const [waiting, setWaiting] = useState<WaitingFile[]>([]);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState("");
+
+  const [tick, setTick] = useState(0);
+  const refresh = useCallback(() => setTick((n) => n + 1), []);
+  useEffect(() => {
+    let off = false;
+    Promise.all([engine.fileTargets(name), engine.waitingFiles(name)])
+      .then(([t, w]) => {
+        if (off) return;
+        setTargets(t);
+        setWaiting(w);
+      })
+      .catch((err) => {
+        if (off) return;
+        const [title, text] = friendly(err);
+        setNote(`${title}. ${text}`);
+      });
+    return () => {
+      off = true;
+    };
+  }, [name, tick]);
+
+  const send = useCallback(async (t: FileTarget) => {
+    setNote("");
+    const picked = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
+    const asset = picked.canceled ? undefined : picked.assets[0];
+    if (!asset) return;
+    setBusy(`send:${t.id}`);
+    try {
+      await engine.sendFile(name, t.id, fileUriToPath(asset.uri));
+      setNote(`Sent ${asset.name} to ${t.name}`);
+    } catch (err) {
+      const [title, text] = friendly(err);
+      setNote(`${title}. ${text}`);
+    } finally {
+      setBusy("");
+    }
+  }, [name]);
+
+  const save = useCallback(async (f: WaitingFile) => {
+    setNote("");
+    setBusy(`save:${f.name}`);
+    try {
+      const dir = new Directory(Paths.document, "Taildrop");
+      const { path } = await engine.receiveFile(name, f.name, fileUriToPath(dir.uri));
+      setNote(`Saved ${f.name}`);
+      refresh();
+      if (Platform.OS === "ios") void Share.share({ url: `file://${path}` }).catch(() => {});
+    } catch (err) {
+      const [title, text] = friendly(err);
+      setNote(`${title}. ${text}`);
+    } finally {
+      setBusy("");
+    }
+  }, [name, refresh]);
+
+  const row = (key: string, i: number, left: string, sub: string, action: string, onPress: () => void, label: string) => (
+    <View key={key} style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 14, paddingRight: 8, borderTopWidth: i ? hairline : 0, borderTopColor: colors.lineStrong }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <T v="small" medium numberOfLines={1}>{left}</T>
+        <T v="label" color={colors.muted} numberOfLines={1}>{sub}</T>
+      </View>
+      <Button title={action} label={label} busy={busy === key} onPress={onPress} />
+    </View>
+  );
+  return (
+    <Pane title="Taildrop" hint={waiting.length ? `${waiting.length} waiting` : undefined}>
+      {waiting.length ? <Card>{waiting.map((f, i) => row(`save:${f.name}`, i, f.name, fileSize(f.size), "Save", () => void save(f), `Save ${f.name}`))}</Card> : null}
+      {targets.length ? <Card>{targets.map((t, i) => row(`send:${t.id}`, i, t.name, "Send a file", "Send…", () => void send(t), `Send a file to ${t.name}`))}</Card> : <Hint>No devices can receive files right now.</Hint>}
+      {note ? <T v="label" color={/^(Sent|Saved)/.test(note) ? colors.ok : colors.bad} accessibilityLiveRegion="polite">{note}</T> : null}
+    </Pane>
+  );
+}
+
+const fileUriToPath = (uri: string) => decodeURIComponent(uri.replace(/^file:\/\//, ""));
+const fileSize = (n: number) => (n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
 // A tailnet's Tailscale settings. Keyed by tailnet, so each one starts from its own saved values.
 function OptionsPane({ name, saved }: { name: string; saved: Prefs | undefined }) {
@@ -329,6 +414,8 @@ export function TailnetSheet({ visible, profile: p, up, toggling, onClose, onTog
         {domainNote ? <T v="label" color={colors.bad} accessibilityLiveRegion="polite">{domainNote}</T> : null}
         <Hint>{DOMAIN_HINT}</Hint>
       </Pane>
+
+      {p.online ? <TaildropPane key={`drop-${p.name}`} name={p.name} /> : null}
 
       <OptionsPane key={p.name} name={p.name} saved={p.prefs} />
 
