@@ -124,6 +124,27 @@ type fakeNode struct {
 	devices  []Device
 	learnIPs []netip.Addr
 	learnDom []string
+	prefs    []Prefs // every SetPrefs call, newest last
+	prefsErr error   // returned by SetPrefs while set (e.g. exit node not known yet)
+}
+
+func (n *fakeNode) SetPrefs(ctx context.Context, p Prefs) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.prefsErr != nil {
+		return n.prefsErr
+	}
+	n.prefs = append(n.prefs, p)
+	return nil
+}
+
+func (n *fakeNode) lastPrefs() (Prefs, int) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if len(n.prefs) == 0 {
+		return Prefs{}, 0
+	}
+	return n.prefs[len(n.prefs)-1], len(n.prefs)
 }
 
 func (n *fakeNode) stateFile() string { return filepath.Join(n.opts.Dir, "fake.json") }

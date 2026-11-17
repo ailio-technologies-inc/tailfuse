@@ -8,7 +8,7 @@ import { DEVICE_PAGE, DEVICE_ROW_HEIGHT, DEVICE_SEARCH_DEBOUNCE_MS, DOMAIN_CAP, 
 import { deviceWord } from "./platform";
 import { Sheet } from "./Sheet";
 import { colors, hairline } from "./theme";
-import type { Device, Profile } from "./types";
+import type { Device, Prefs, Profile } from "./types";
 import { useCopied } from "./useCopied";
 
 type Props = {
@@ -120,6 +120,49 @@ const DeviceRow = memo(function DeviceRow({ d, copied, thisLabel, onPress }: { d
 
 const getItemLayout = (_: ArrayLike<Device> | null | undefined, index: number) => ({ length: ROW_H, offset: ROW_H * index, index });
 const keyOf = (d: Device) => d.dns_name || d.name;
+
+// A tailnet's Tailscale settings. Keyed by tailnet, so each one starts from its own saved values.
+function OptionsPane({ name, saved }: { name: string; saved: Prefs | undefined }) {
+  const [opts, setOpts] = useState<Prefs>(saved ?? {});
+  const [exitNode, setExitNode] = useState(saved?.exit_node ?? "");
+  const [routes, setRoutes] = useState((saved?.advertise_routes ?? []).join(", "));
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = useCallback(async () => {
+    setBusy(true);
+    try {
+      await engine.setOptions(name, { ...opts, exit_node: exitNode.trim(), advertise_routes: routes.split(",").map((r) => r.trim()).filter(Boolean) });
+      setNote("Saved");
+    } catch (err) {
+      const [title, text] = friendly(err);
+      setNote(`${title}. ${text}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [name, opts, exitNode, routes]);
+
+  const toggles: [string, "accept_routes" | "advertise_exit_node" | "shields_up"][] = [
+    ["Use subnet routes from other devices", "accept_routes"],
+    ["Offer this device as an exit node", "advertise_exit_node"],
+    ["Block incoming connections", "shields_up"],
+  ];
+  return (
+    <Pane title="Tailscale options">
+      <Field label="Exit node" value={exitNode} onChangeText={setExitNode} placeholder="A device's name, or empty for none" autoCapitalize="none" autoCorrect={false} returnKeyType="done" />
+      <Field label="Subnets to share" value={routes} onChangeText={setRoutes} placeholder="10.0.0.0/24, 192.168.1.0/24" autoCapitalize="none" autoCorrect={false} returnKeyType="done" />
+      {toggles.map(([label, key]) => (
+        <View key={key} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <T v="small" style={{ flex: 1 }}>{label}</T>
+          <Switch value={!!opts[key]} label={label} onValueChange={(v) => setOpts((o) => ({ ...o, [key]: v }))} />
+        </View>
+      ))}
+      <Button variant="primary" title="Save options" busy={busy} onPress={() => void save()} />
+      {note ? <T v="label" color={note === "Saved" ? colors.ok : colors.bad} accessibilityLiveRegion="polite">{note}</T> : null}
+      <Hint>Shared subnets and exit nodes also need approval in the Tailscale admin console.</Hint>
+    </Pane>
+  );
+}
 
 export function TailnetSheet({ visible, profile: p, up, toggling, onClose, onToggle, onSignInAgain, onRemove }: Props) {
   const device = deviceWord();
@@ -289,6 +332,8 @@ export function TailnetSheet({ visible, profile: p, up, toggling, onClose, onTog
         {domainNote ? <T v="label" color={colors.bad} accessibilityLiveRegion="polite">{domainNote}</T> : null}
         <Hint>{DOMAIN_HINT}</Hint>
       </Pane>
+
+      <OptionsPane key={p.name} name={p.name} saved={p.prefs} />
 
       <View style={{ flexDirection: "row", gap: 10 }}>
         <View style={{ flex: 1 }}>

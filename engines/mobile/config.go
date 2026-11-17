@@ -68,6 +68,8 @@ type Profile struct {
 	Pending bool `json:"pending,omitempty"`
 	// Created is when a pending profile was made (for its 10 minute limit).
 	Created time.Time `json:"created,omitzero"`
+	// Prefs are this node's Tailscale settings (exit node, routes, shields).
+	Prefs Prefs `json:"prefs,omitzero"`
 }
 
 // Tunnel is a local port: 127.0.0.1:PORT pinned to host:port on one tailnet.

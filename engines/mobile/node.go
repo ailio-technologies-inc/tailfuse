@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
+	"strings"
 
 	"github.com/tailscale/wireguard-go/tun"
 )
@@ -27,6 +29,43 @@ type Node interface {
 	// Learn reports what the tailnet serves: the Tailscale addresses of its
 	// online devices (not this one) and the domains its DNS answers.
 	Learn(ctx context.Context) (ips []netip.Addr, domains []string, err error)
+}
+
+// Prefs are the Tailscale settings a person can change on a node.
+type Prefs struct {
+	// ExitNode is a device's name or Tailscale address to send all traffic
+	// through; "" for none.
+	ExitNode string `json:"exit_node,omitempty"`
+	// AcceptRoutes uses the subnet routes other devices advertise.
+	AcceptRoutes bool `json:"accept_routes,omitempty"`
+	// AdvertiseRoutes are subnets (CIDR) this device offers the tailnet.
+	AdvertiseRoutes []string `json:"advertise_routes,omitempty"`
+	// AdvertiseExitNode offers this device as an exit node.
+	AdvertiseExitNode bool `json:"advertise_exit_node,omitempty"`
+	// ShieldsUp blocks incoming connections from the tailnet.
+	ShieldsUp bool `json:"shields_up,omitempty"`
+}
+
+// IsZero reports whether nothing is set, so there is nothing to apply.
+func (p Prefs) IsZero() bool {
+	return p.ExitNode == "" && !p.AcceptRoutes && len(p.AdvertiseRoutes) == 0 && !p.AdvertiseExitNode && !p.ShieldsUp
+}
+
+// Validate checks the values before they are saved.
+func (p Prefs) Validate() error {
+	for _, r := range p.AdvertiseRoutes {
+		if _, err := netip.ParsePrefix(strings.TrimSpace(r)); err != nil {
+			return fmt.Errorf("%q is not a subnet like 10.0.0.0/24", r)
+		}
+	}
+	return nil
+}
+
+// PrefsNode is a Node whose Tailscale settings can be changed (the real node
+// can; some test fakes cannot). SetPrefs returns an error while the exit node
+// is not yet among the tailnet's devices, so callers retry.
+type PrefsNode interface {
+	SetPrefs(ctx context.Context, p Prefs) error
 }
 
 // NodeOptions configures a new Node.

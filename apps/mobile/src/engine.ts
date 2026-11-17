@@ -2,7 +2,7 @@
 // otherwise. Every call parses {ok,result,error} and throws Error(error) on failure.
 import * as Native from "../modules/tailfuse-engine";
 import { mock } from "./mock";
-import type { DevicePage, State, SyncResult, TestHostResult } from "./types";
+import type { DevicePage, Prefs, State, SyncResult, TestHostResult } from "./types";
 
 export const usingMock = !Native.isAvailable;
 
@@ -39,6 +39,7 @@ export const devices = (q: DevicesQuery) => run<DevicePage>("devices", q);
 export const importSetup = (link: string, dryRun = false) => run<SyncResult>("import_setup", { link, dry_run: dryRun });
 export const addDomain = (name: string, domain: string) => run<null>("add_domain", { name, domain });
 export const removeDomain = (name: string, domain: string) => run<null>("remove_domain", { name, domain });
+export const setOptions = (name: string, prefs: Prefs) => run<null>("set_options", { name, ...prefs });
 export const setUnlocked = (on: boolean) => run<null>("set_unlocked", { on });
 export const setAllApps = (on: boolean) => run<null>("set_all_apps", { on });
 export const start = () => backend.start();

@@ -365,6 +365,32 @@ func (e *Engine) startNodeLocked(name string) {
 	e.mu.Lock()
 	e.nodes[name] = ne
 	e.mu.Unlock()
+	if ne.node != nil && !p.Prefs.IsZero() {
+		e.applyPrefs(name, ne.node, p.Prefs)
+	}
+}
+
+// applyPrefs sets a node's Tailscale settings in the background. The exit node
+// can only be found once the tailnet's devices are known, so it retries for a
+// minute; the node stops being worth trying once it is closed.
+func (e *Engine) applyPrefs(name string, n Node, p Prefs) {
+	pn, ok := n.(PrefsNode)
+	if !ok {
+		return
+	}
+	go func() {
+		var err error
+		for i := 0; i < 30; i++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err = pn.SetPrefs(ctx, p)
+			cancel()
+			if err == nil {
+				return
+			}
+			time.Sleep(2 * time.Second)
+		}
+		e.opts.Logf("tailnet %s: could not apply settings: %v", name, err)
+	}()
 }
 
 // stopNodeLocked closes a profile's node. Caller holds opMu.
@@ -807,6 +833,8 @@ type ProfileState struct {
 	NeedsLogin bool `json:"needs_login"`
 	// Connecting: the node is starting and needs no sign-in.
 	Connecting bool `json:"connecting"`
+	// Prefs are the saved Tailscale settings (set_options).
+	Prefs Prefs `json:"prefs"`
 }
 
 // nodeStateFile is where a node keeps its keys (tsnet's own file name).
@@ -854,7 +882,7 @@ func (e *Engine) State() State {
 		p := cfg.Profiles[name]
 		ps := ProfileState{
 			Name: name, Account: p.Account, Tailnet: p.Tailnet, Paused: p.Paused,
-			Suffixes: append([]string{}, p.Suffixes...), IPs: []string{},
+			Suffixes: append([]string{}, p.Suffixes...), IPs: []string{}, Prefs: p.Prefs,
 		}
 		ne := e.nodes[name]
 		if !up {
@@ -1150,6 +1178,15 @@ func (e *Engine) dispatch(req Request) (any, error) {
 			return nil, e.AddDomain(a.Name, a.Domain)
 		}
 		return nil, e.RemoveDomain(a.Name, a.Domain)
+	case "set_options":
+		var a struct {
+			Name string `json:"name"`
+			Prefs
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return nil, err
+		}
+		return nil, e.SetOptions(a.Name, a.Prefs)
 	case "":
 		return nil, errors.New("bad request: no cmd")
 	default:
@@ -1255,6 +1292,37 @@ func (e *Engine) SetConnected(name string, on bool) error {
 	} else if !on {
 		e.stopNodeLocked(name)
 		e.reconcileLogsLocked()
+	}
+	return nil
+}
+
+// SetOptions saves a tailnet's Tailscale settings and applies them to its node
+// when it is running (otherwise they apply when it starts).
+func (e *Engine) SetOptions(name string, prefs Prefs) error {
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	if err := e.reloadLocked(); err != nil {
+		return err
+	}
+	if e.cfg.Profiles[name] == nil {
+		return fmt.Errorf("there is no tailnet called %q", name)
+	}
+	if err := prefs.Validate(); err != nil {
+		return err
+	}
+	cfg := e.cfg.Clone()
+	cfg.Profiles[name].Prefs = prefs
+	if err := e.commitLocked(cfg); err != nil {
+		return err
+	}
+	if !e.Running() {
+		return nil
+	}
+	e.mu.RLock()
+	ne := e.nodes[name]
+	e.mu.RUnlock()
+	if ne != nil && ne.node != nil {
+		e.applyPrefs(name, ne.node, prefs)
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 	"tailscale.com/client/local"
 	"tailscale.com/envknob"
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
 )
@@ -218,6 +220,68 @@ func (n *tsNode) Login(ctx context.Context) error {
 		return err
 	}
 	return lc.StartLoginInteractive(ctx)
+}
+
+// SetPrefs applies the settings with one EditPrefs call. The exit node is
+// found among the tailnet's devices by name or address.
+func (n *tsNode) SetPrefs(ctx context.Context, p Prefs) error {
+	_, lc, err := n.get()
+	if err != nil {
+		return err
+	}
+	routes := make([]netip.Prefix, 0, len(p.AdvertiseRoutes)+2)
+	for _, r := range p.AdvertiseRoutes {
+		pf, err := netip.ParsePrefix(strings.TrimSpace(r))
+		if err != nil {
+			return err
+		}
+		routes = append(routes, pf.Masked())
+	}
+	if p.AdvertiseExitNode {
+		routes = append(routes, netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0"))
+	}
+	mp := &ipn.MaskedPrefs{
+		Prefs: ipn.Prefs{
+			RouteAll:        p.AcceptRoutes,
+			ShieldsUp:       p.ShieldsUp,
+			AdvertiseRoutes: routes,
+		},
+		RouteAllSet:        true,
+		ShieldsUpSet:       true,
+		AdvertiseRoutesSet: true,
+		// Clear any earlier exit node first; set below when one is wanted.
+		ExitNodeIDSet: true,
+		ExitNodeIPSet: true,
+	}
+	if want := strings.TrimSpace(p.ExitNode); want != "" {
+		ip, err := n.findDevice(ctx, lc, want)
+		if err != nil {
+			return err
+		}
+		mp.ExitNodeIP = ip
+	}
+	_, err = lc.EditPrefs(ctx, mp)
+	return err
+}
+
+// findDevice resolves a device's name, DNS name or address to its first
+// Tailscale address.
+func (n *tsNode) findDevice(ctx context.Context, lc *local.Client, want string) (netip.Addr, error) {
+	if ip, err := netip.ParseAddr(want); err == nil {
+		return ip, nil
+	}
+	st, err := lc.Status(ctx)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	want = strings.ToLower(strings.TrimSuffix(want, "."))
+	for _, d := range st.Peer {
+		name := strings.ToLower(strings.TrimSuffix(d.DNSName, "."))
+		if (strings.ToLower(d.HostName) == want || name == want || strings.HasPrefix(name, want+".")) && len(d.TailscaleIPs) > 0 {
+			return d.TailscaleIPs[0], nil
+		}
+	}
+	return netip.Addr{}, fmt.Errorf("no device called %q on this tailnet yet", want)
 }
 
 func (n *tsNode) Devices(ctx context.Context) ([]Device, error) {

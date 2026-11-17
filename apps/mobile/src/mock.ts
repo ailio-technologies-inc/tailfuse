@@ -312,6 +312,21 @@ function run(cmd: string, a: Args): unknown {
       emit("domains");
       return null;
     }
+    case "set_options": {
+      const p = byName(a.name);
+      const routes = (Array.isArray(a.advertise_routes) ? a.advertise_routes : []).map(String);
+      const bad = routes.find((r) => !/^[\d.]+\/\d{1,2}$|^[\da-f:]+\/\d{1,3}$/i.test(r.trim()));
+      if (bad) throw new Error(`"${bad}" is not a subnet like 10.0.0.0/24`);
+      p.prefs = {
+        exit_node: String(a.exit_node ?? ""),
+        accept_routes: Boolean(a.accept_routes),
+        advertise_routes: routes,
+        advertise_exit_node: Boolean(a.advertise_exit_node),
+        shields_up: Boolean(a.shields_up),
+      };
+      emit("state");
+      return null;
+    }
     case "remove_profile": {
       const p = byName(a.name);
       profiles = profiles.filter((x) => x !== p);

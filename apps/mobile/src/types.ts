@@ -1,4 +1,13 @@
 // The engine's State JSON (engines/mobile/API.md).
+/** A tailnet's Tailscale settings (`set_options`). */
+export type Prefs = {
+  exit_node?: string;
+  accept_routes?: boolean;
+  advertise_routes?: string[];
+  advertise_exit_node?: boolean;
+  shields_up?: boolean;
+};
+
 export type Profile = {
   name: string;
   account: string;
@@ -14,6 +23,8 @@ export type Profile = {
   needs_login: boolean;
   /** Tailfuse is on and the node is starting; no sign-in needed. */
   connecting: boolean;
+  /** Saved Tailscale settings; absent from older engines. */
+  prefs?: Prefs;
 };
 
 export type Tunnel = { name: string; listen: string; target: string; profile: string };
