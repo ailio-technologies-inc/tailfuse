@@ -324,23 +324,8 @@ async fn start_inner_locked(state: &AppState) -> Result<(), String> {
     if let Err(e) = r.clone().serve(&cfg.router.listen, rx.clone()).await {
         return Err(format!("router: {e:#}"));
     }
-    // Learn what each tailnet serves (split DNS, devices' addresses), so names
-    // like a custom domain pointed at a tailnet machine route with no setup.
-    // One round first, waiting up to 4 s for the tailnets to report, so the
-    // PAC the browsers fetch next already lists what they serve.
-    for _ in 0..8 {
-        let learned = daemons.learn().await;
-        let any = learned
-            .iter()
-            .any(|(_, ips, d)| !ips.is_empty() || !d.is_empty());
-        for (name, ips, domains) in &learned {
-            r.routes().set_learned(name, ips, domains);
-        }
-        if any {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
+    // Learn what every connected tailnet serves before browsers fetch the PAC.
+    daemons.learn_initial(&cfg, &r.routes()).await;
     daemon::spawn_learning(daemons.clone(), r.routes(), rx);
     // Best-effort system PAC; the window shows the manual URL regardless.
     let pac_url = format!("http://{}/tailfuse.pac", cfg.router.listen);

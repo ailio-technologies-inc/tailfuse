@@ -339,7 +339,8 @@ async fn cmd_up(no_pac: bool) -> Result<()> {
         .clone()
         .serve(&cfg.router.listen, shutdown_rx.clone())
         .await?;
-    // Learn the domains and devices each tailnet serves (split DNS, custom domains).
+    // Populate the PAC before making it available to browsers.
+    set.learn_initial(&cfg, &router.routes()).await;
     daemon::spawn_learning(set.clone(), router.routes(), shutdown_rx);
     println!("router listening on {router_addr} (PAC: http://{router_addr}/tailfuse.pac)");
 
@@ -461,6 +462,8 @@ async fn cmd_run(command: Vec<String>) -> Result<()> {
     let router = Arc::new(router::Router::new(&cfg, &cfg.router.listen, routes));
     let (_tx, rx) = watch::channel(false);
     router.clone().serve(&cfg.router.listen, rx.clone()).await?;
+    // The child may make requests as soon as it starts.
+    set.learn_initial(&cfg, &router.routes()).await;
     daemon::spawn_learning(set.clone(), router.routes(), rx);
     let addr = cfg.router.listen.clone();
 

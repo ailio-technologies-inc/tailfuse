@@ -298,6 +298,23 @@ impl DaemonSet {
         out
     }
 
+    /// Populate the routing table before startup finishes. Retry briefly while
+    /// the daemons come up, rather than letting the first tailnet with data end
+    /// the wait for every other connected tailnet.
+    pub async fn learn_initial(&self, cfg: &config::Config, routes: &crate::router::RouteTable) {
+        for _ in 0..8 {
+            let learned = self.learn().await;
+            let complete = initial_learning_complete(cfg, &learned);
+            for (name, ips, domains) in &learned {
+                routes.set_learned(name, ips, domains);
+            }
+            if complete {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
+
     /// Poll `tailscale status --json` per profile.
     pub async fn status(&self) -> Vec<ProfileStatus> {
         let map = self.inner.lock().await;
@@ -429,6 +446,24 @@ fn kill_with_tailfuse(child: &Child) {
     let _ = child;
 }
 
+/// True when every connected tailnet returned routing data. An empty report
+/// can mean its daemon is still starting, so keep retrying until the caller's
+/// time limit; tailnets with genuinely nothing extra to learn only incur that
+/// bounded startup wait.
+fn initial_learning_complete(
+    cfg: &config::Config,
+    learned: &[(String, Vec<std::net::IpAddr>, Vec<String>)],
+) -> bool {
+    cfg.profiles
+        .iter()
+        .filter(|(_, profile)| profile.connected)
+        .all(|(name, _)| {
+            learned.iter().any(|(learned_name, ips, domains)| {
+                learned_name == name && (!ips.is_empty() || !domains.is_empty())
+            })
+        })
+}
+
 /// Keep `routes` up to date with what each tailnet serves: now, then every 30
 /// seconds, until `shutdown` turns true.
 pub fn spawn_learning(
@@ -437,7 +472,7 @@ pub fn spawn_learning(
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     tokio::spawn(async move {
-        let mut wait = std::time::Duration::from_secs(3);
+        let mut wait = std::time::Duration::ZERO;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(wait) => {}
@@ -1218,7 +1253,8 @@ mod orphan_tests {
 
 #[cfg(test)]
 mod learn_tests {
-    use super::{online_peer_ips, served_domains};
+    use super::{initial_learning_complete, online_peer_ips, served_domains};
+    use crate::config::{Config, Profile};
 
     #[test]
     fn domains_skip_ts_net_and_keep_split_and_search() {
@@ -1227,6 +1263,30 @@ mod learn_tests {
             served_domains(text),
             vec!["ailio.dev", "tail8e2dc7.ts.net", "corp.example"]
         );
+    }
+
+    #[test]
+    fn initial_learning_waits_for_every_connected_tailnet() {
+        let mut cfg = Config::default();
+        cfg.profiles.insert("one".into(), Profile::default());
+        cfg.profiles.insert("two".into(), Profile::default());
+        let one = vec![(
+            "one".to_string(),
+            Vec::new(),
+            vec!["one.example".to_string()],
+        )];
+        assert!(!initial_learning_complete(&cfg, &one));
+
+        let mut all = one.clone();
+        all.push((
+            "two".to_string(),
+            Vec::new(),
+            vec!["two.example".to_string()],
+        ));
+        assert!(initial_learning_complete(&cfg, &all));
+
+        cfg.profiles.get_mut("two").unwrap().connected = false;
+        assert!(initial_learning_complete(&cfg, &one));
     }
 
     #[test]
