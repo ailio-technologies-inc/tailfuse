@@ -249,6 +249,17 @@ async function saveOptions() {
   }
 }
 
+async function taildrop(cmd, args) {
+  const out = $("#o-out");
+  out.hidden = false;
+  out.textContent = "Working…";
+  try {
+    out.textContent = await invoke(cmd, { name: optionsFor, ...args });
+  } catch (err) {
+    out.textContent = sentence(err);
+  }
+}
+
 async function runTailscale() {
   const out = $("#o-out");
   const args = $("#o-cmd").value.trim().split(/\s+/).filter(Boolean);
@@ -622,6 +633,8 @@ if (!invoke) {
 
   $("#o-save").addEventListener("click", saveOptions);
   $("#o-run").addEventListener("click", runTailscale);
+  $("#o-send").addEventListener("click", () => taildrop("taildrop_send", { device: $("#o-drop").value }));
+  $("#o-receive").addEventListener("click", () => taildrop("taildrop_receive", {}));
   $("#o-cmd").addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();

@@ -1109,6 +1109,65 @@ async fn tailscale_run(name: String, args: Vec<String>) -> Result<String, String
         .map_err(|e| e.to_string())
 }
 
+/// Taildrop: pick files with the native dialog and send them to a device on a tailnet.
+#[tauri::command]
+async fn taildrop_send(app: AppHandle, name: String, device: String) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let device = device.trim().trim_end_matches(':').to_string();
+    if device.is_empty() {
+        return Err("Type the name of the device to send to".into());
+    }
+    let picker = app.clone();
+    let picked = tokio::task::spawn_blocking(move || picker.dialog().file().blocking_pick_files())
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(files) = picked else {
+        return Ok("Nothing sent".into());
+    };
+    let mut args = vec!["file".to_string(), "cp".to_string()];
+    for f in &files {
+        let path = f.clone().into_path().map_err(|e| e.to_string())?;
+        args.push(path.to_string_lossy().to_string());
+    }
+    args.push(format!("{device}:"));
+    daemon::tailscale_run(&name, &args)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "Sent {} to {device}",
+        if files.len() == 1 {
+            "1 file".to_string()
+        } else {
+            format!("{} files", files.len())
+        }
+    ))
+}
+
+/// Taildrop: move files waiting for this tailnet's node into Downloads.
+#[tauri::command]
+async fn taildrop_receive(app: AppHandle, name: String) -> Result<String, String> {
+    use tauri::Manager;
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let args = vec![
+        "file".to_string(),
+        "get".to_string(),
+        "--conflict=rename".to_string(),
+        dir.to_string_lossy().to_string(),
+    ];
+    let out = daemon::tailscale_run(&name, &args)
+        .await
+        .map_err(|e| e.to_string())?;
+    let out = out.trim();
+    Ok(if out.is_empty() {
+        format!(
+            "Checked for files; anything waiting is now in {}",
+            dir.display()
+        )
+    } else {
+        out.to_string()
+    })
+}
+
 #[tauri::command]
 async fn remove_profile(state: State<'_, SharedState>, name: String) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
@@ -1553,6 +1612,8 @@ pub fn run() {
             get_profile_options,
             set_profile_options,
             tailscale_run,
+            taildrop_send,
+            taildrop_receive,
             import_from_tailscale,
             sign_in_new_tailnet,
             disconnect_tailscale_app,
