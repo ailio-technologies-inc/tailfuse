@@ -405,7 +405,14 @@ impl Router {
         conn.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
             .await?;
 
-        let mut upstream = socks5_connect_pub(upstream_port, &host, dest_port).await?;
+        let mut upstream = match socks5_connect_pub(upstream_port, &host, dest_port).await {
+            Ok(u) => u,
+            Err(e) if dest_port == 80 => {
+                tracing::info!(%host, "port 80 refused ({e:#}); redirecting to https");
+                return redirect_to_https(conn, &host).await;
+            }
+            Err(e) => return Err(e),
+        };
         pipe_bidirectional(conn, &mut upstream).await
     }
 
@@ -477,12 +484,70 @@ impl Router {
             .next()
             .and_then(|p| p.parse::<u16>().ok())
             .unwrap_or(443);
-        let mut upstream = socks5_connect_pub(upstream_port, &host, dest_port).await?;
+        let mut upstream = match socks5_connect_pub(upstream_port, &host, dest_port).await {
+            Ok(u) => u,
+            Err(e) if dest_port == 80 => {
+                tracing::info!(%host, "port 80 refused ({e:#}); redirecting to https");
+                return redirect_to_https(conn, &host).await;
+            }
+            Err(e) => return Err(e),
+        };
         if !body_rest.is_empty() {
             upstream.write_all(&body_rest).await?;
         }
         pipe_bidirectional(conn, &mut upstream).await
     }
+}
+
+/// A tailnet host that does not listen on port 80: do what a browser's HTTPS
+/// upgrade would and send the client to `https://`. The client was already told
+/// the connection succeeded, so it is waiting to send its request; read the
+/// request line for the path and answer it. The host in the redirect is the
+/// name the router matched, never one taken from the request.
+async fn redirect_to_https(conn: &mut TcpStream, host: &str) -> Result<()> {
+    let mut buf = Vec::with_capacity(1024);
+    {
+        let mut tmp = [0u8; 1024];
+        let read = async {
+            while !buf.windows(4).any(|w| w == b"\r\n\r\n") && buf.len() < 16 * 1024 {
+                let n = conn.read(&mut tmp).await?;
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&tmp[..n]);
+            }
+            Ok::<(), std::io::Error>(())
+        };
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), read).await;
+    }
+    let head = String::from_utf8_lossy(&buf);
+    let mut parts = head.lines().next().unwrap_or("").split_whitespace();
+    let method = parts.next().unwrap_or("GET");
+    let target = parts.next().unwrap_or("/");
+    // Origin form ("/a?b") normally; a proxy-style absolute URL keeps only its path.
+    let path = if target.starts_with('/') {
+        target.to_string()
+    } else {
+        target
+            .strip_prefix("http://")
+            .and_then(|r| r.find('/').map(|i| r[i..].to_string()))
+            .unwrap_or_else(|| "/".to_string())
+    };
+    let authority = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    let (code, text) = if matches!(method, "GET" | "HEAD") {
+        (301, "Moved Permanently")
+    } else {
+        (308, "Permanent Redirect") // keeps the method and body for a POST
+    };
+    let reply = format!(
+        "HTTP/1.1 {code} {text}\r\nLocation: https://{authority}{path}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    );
+    conn.write_all(reply.as_bytes()).await?;
+    Ok(())
 }
 
 /// Dial `host:dest_port` through the per-profile upstream SOCKS5 proxy.
@@ -596,6 +661,124 @@ mod tests {
             }
         });
         port
+    }
+
+    /// A per-profile SOCKS5 upstream whose tailnet host listens on 443 only:
+    /// a CONNECT to port 80 is answered "connection refused".
+    async fn https_only_upstream() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = listener.accept().await else {
+                    return;
+                };
+                tokio::spawn(async move {
+                    let mut h = [0u8; 2];
+                    if s.read_exact(&mut h).await.is_err() {
+                        return;
+                    }
+                    let mut m = vec![0u8; h[1] as usize];
+                    let _ = s.read_exact(&mut m).await;
+                    let _ = s.write_all(&[0x05, 0x00]).await;
+                    let mut r = [0u8; 4];
+                    if s.read_exact(&mut r).await.is_err() {
+                        return;
+                    }
+                    let len = s.read_u8().await.unwrap_or(0);
+                    let mut host = vec![0u8; len as usize];
+                    let _ = s.read_exact(&mut host).await;
+                    let port = s.read_u16().await.unwrap_or(0);
+                    let code = if port == 80 { 0x05 } else { 0x00 };
+                    let _ = s
+                        .write_all(&[0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                        .await;
+                    if code == 0 {
+                        let _ = s.write_u8(b'S').await;
+                    }
+                });
+            }
+        });
+        port
+    }
+
+    async fn https_only_router() -> (std::net::SocketAddr, watch::Sender<bool>) {
+        let port = https_only_upstream().await;
+        let cfg = crate::config::Config::default();
+        let routes = RouteTable {
+            by_suffix: BTreeMap::from([(".ailio.dev".into(), ("ailio".into(), port))]),
+            ports: BTreeMap::from([("ailio".into(), port)]),
+            ..Default::default()
+        };
+        let router = Arc::new(Router::new(&cfg, "127.0.0.1:0", routes));
+        let (tx, rx) = watch::channel(false);
+        let addr = router.serve("127.0.0.1:0", rx).await.unwrap();
+        (addr, tx)
+    }
+
+    /// Plain http:// to a tailnet host that only serves https is sent to https.
+    #[tokio::test]
+    async fn http_to_a_port_80_refusal_redirects_to_https() {
+        let (addr, _tx) = https_only_router().await;
+        let mut s = socks5_connect_pub(addr.port(), "app.ailio.dev", 80)
+            .await
+            .unwrap();
+        s.write_all(b"GET /docs?a=1 HTTP/1.1\r\nHost: app.ailio.dev\r\n\r\n")
+            .await
+            .unwrap();
+        let mut out = String::new();
+        s.read_to_string(&mut out).await.unwrap();
+        assert!(
+            out.starts_with("HTTP/1.1 301 Moved Permanently"),
+            "got: {out}"
+        );
+        assert!(
+            out.contains("Location: https://app.ailio.dev/docs?a=1\r\n"),
+            "got: {out}"
+        );
+
+        // A POST keeps its method with a 308.
+        let mut p = socks5_connect_pub(addr.port(), "app.ailio.dev", 80)
+            .await
+            .unwrap();
+        p.write_all(b"POST /x HTTP/1.1\r\nHost: other.example\r\n\r\n")
+            .await
+            .unwrap();
+        let mut out = String::new();
+        p.read_to_string(&mut out).await.unwrap();
+        // The host comes from what the router matched, not from the request's Host header.
+        assert!(out.starts_with("HTTP/1.1 308"), "got: {out}");
+        assert!(
+            out.contains("Location: https://app.ailio.dev/x\r\n"),
+            "got: {out}"
+        );
+
+        // https itself is untouched.
+        let mut t = socks5_connect_pub(addr.port(), "app.ailio.dev", 443)
+            .await
+            .unwrap();
+        assert_eq!(t.read_u8().await.unwrap(), b'S');
+    }
+
+    /// The same through an HTTP CONNECT proxy client.
+    #[tokio::test]
+    async fn http_connect_to_port_80_refusal_redirects() {
+        let (addr, _tx) = https_only_router().await;
+        let mut s = TcpStream::connect(addr).await.unwrap();
+        s.write_all(b"CONNECT app.ailio.dev:80 HTTP/1.1\r\n\r\n")
+            .await
+            .unwrap();
+        let mut ok = [0u8; 39];
+        s.read_exact(&mut ok).await.unwrap();
+        s.write_all(b"GET / HTTP/1.1\r\nHost: app.ailio.dev\r\n\r\n")
+            .await
+            .unwrap();
+        let mut out = String::new();
+        s.read_to_string(&mut out).await.unwrap();
+        assert!(
+            out.contains("Location: https://app.ailio.dev/\r\n"),
+            "got: {out}"
+        );
     }
 
     async fn test_router() -> (std::net::SocketAddr, watch::Sender<bool>) {
