@@ -1168,6 +1168,44 @@ async fn taildrop_receive(app: AppHandle, name: String) -> Result<String, String
     })
 }
 
+/// A Let's Encrypt certificate for this device's MagicDNS name, saved to Downloads.
+#[tauri::command]
+async fn tailscale_cert(app: AppHandle, name: String) -> Result<String, String> {
+    use tauri::Manager;
+    let status = daemon::tailscale_run(&name, &["status".into(), "--json".into()])
+        .await
+        .map_err(|e| e.to_string())?;
+    let v: serde_json::Value = serde_json::from_str(&status).map_err(|e| e.to_string())?;
+    let dns = v["Self"]["DNSName"]
+        .as_str()
+        .unwrap_or("")
+        .trim_end_matches('.')
+        .to_string();
+    if dns.is_empty() {
+        return Err("This device has no MagicDNS name yet. Turn on HTTPS certificates for the tailnet in the Tailscale admin console.".into());
+    }
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let (crt, key) = (
+        dir.join(format!("{dns}.crt")),
+        dir.join(format!("{dns}.key")),
+    );
+    let args = vec![
+        "cert".to_string(),
+        "--cert-file".into(),
+        crt.to_string_lossy().to_string(),
+        "--key-file".into(),
+        key.to_string_lossy().to_string(),
+        dns.clone(),
+    ];
+    daemon::tailscale_run(&name, &args)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "Saved a certificate for {dns} to {}",
+        dir.display()
+    ))
+}
+
 #[tauri::command]
 async fn remove_profile(state: State<'_, SharedState>, name: String) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
@@ -1614,6 +1652,7 @@ pub fn run() {
             tailscale_run,
             taildrop_send,
             taildrop_receive,
+            tailscale_cert,
             import_from_tailscale,
             sign_in_new_tailnet,
             disconnect_tailscale_app,

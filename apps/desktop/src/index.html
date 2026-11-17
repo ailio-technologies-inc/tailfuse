@@ -220,6 +220,9 @@
           <input id="o-drop" type="text" placeholder="device to send to, e.g. macbook" />
           <div class="dialog-actions"><button type="button" id="o-send" class="btn btn--secondary btn--sm">Send files…</button><button type="button" id="o-receive" class="btn btn--secondary btn--sm">Receive to Downloads</button></div>
         </div>
+        <div class="field"><span>Certificates and tailnet lock</span>
+          <div class="dialog-actions"><button type="button" id="o-cert" class="btn btn--secondary btn--sm">Get HTTPS certificate</button><button type="button" id="o-lock" class="btn btn--secondary btn--sm">Tailnet lock status</button></div>
+        </div>
         <label class="field"><span>Run a Tailscale command</span><input id="o-cmd" type="text" placeholder="ping 100.74.194.18   ·   netcheck   ·   lock status" /></label>
         <pre id="o-out" class="mono muted" hidden></pre>
         <div class="dialog-actions">

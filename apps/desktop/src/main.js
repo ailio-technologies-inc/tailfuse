@@ -634,6 +634,11 @@ if (!invoke) {
   $("#o-save").addEventListener("click", saveOptions);
   $("#o-run").addEventListener("click", runTailscale);
   $("#o-send").addEventListener("click", () => taildrop("taildrop_send", { device: $("#o-drop").value }));
+  $("#o-cert").addEventListener("click", () => taildrop("tailscale_cert", {}));
+  $("#o-lock").addEventListener("click", () => {
+    $("#o-cmd").value = "lock status";
+    runTailscale();
+  });
   $("#o-receive").addEventListener("click", () => taildrop("taildrop_receive", {}));
   $("#o-cmd").addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
