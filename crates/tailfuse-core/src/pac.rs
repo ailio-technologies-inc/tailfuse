@@ -61,15 +61,20 @@ pub fn generate_from(
     exact.sort();
     exact.dedup();
     conds.extend(exact.iter().map(|h| format!("host == {h:?}")));
+    // Chrome and Firefox take "SOCKS5" (SOCKS4 would lose the hostname). Apple's PAC engine, which Safari
+    // and every app using the system proxy go through, does not know "SOCKS5" and sends the request
+    // direct, so a second entry names it "SOCKS" (which it reads as SOCKS5). A browser that understood
+    // the first entry never gets to the second.
+    let route = format!("SOCKS5 {proxy_addr}; SOCKS {proxy_addr}");
     let check = if conds.is_empty() {
         String::new()
     } else {
         format!(
-            "  if (\n      {}\n  ) {{\n    return \"SOCKS5 {proxy_addr}\";\n  }}\n",
+            "  if (\n      {}\n  ) {{\n    return \"{route}\";\n  }}\n",
             conds.join(" ||\n      ")
         )
     };
-    let fallback = FALLBACK.replace("PROXY_ADDR", &format!("\"SOCKS5 {proxy_addr}\""));
+    let fallback = FALLBACK.replace("PROXY_ADDR", &format!("\"{route}\""));
     format!(
         "// tailfuse PAC: generated; served live at http://{proxy_addr}/tailfuse.pac\n\
          function FindProxyForURL(url, host) {{\n  \
@@ -94,11 +99,14 @@ mod tests {
         );
         let pac = generate(&c, "127.0.0.1:43100");
         assert!(pac.contains("dnsDomainIs(host, \".work.ts.net\")"));
-        assert!(pac.contains("SOCKS5 127.0.0.1:43100"));
+        // Both spellings, SOCKS5 first: Safari's engine only knows the second.
+        assert!(pac.contains("return \"SOCKS5 127.0.0.1:43100; SOCKS 127.0.0.1:43100\";"));
         assert!(pac.contains("DIRECT"));
         // Unlisted names that resolve into the Tailscale range still reach the router.
         assert!(pac.contains("isInNet(ip, \"100.64.0.0\", \"255.192.0.0\")"));
-        assert!(pac.contains("if (c[host]) return \"SOCKS5 127.0.0.1:43100\";"));
+        assert!(
+            pac.contains("if (c[host]) return \"SOCKS5 127.0.0.1:43100; SOCKS 127.0.0.1:43100\";")
+        );
     }
 }
 
