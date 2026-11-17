@@ -283,6 +283,7 @@ h1 { margin-top: 16px; max-width: 14em; font-size: clamp(40px, 5vw, 72px); line-
 .doc__body h1 { margin: 0 0 8px; max-width: none; text-align: left; }
 .doc__body h2 { margin-top: 32px; font-size: 26px; letter-spacing: -0.02em; }
 .doc__body p { color: var(--soft); max-width: 64ch; }
+.doc__body ul { margin: 0; padding-left: 22px; color: var(--soft); max-width: 64ch; display: flex; flex-direction: column; gap: 8px; }
 .doc__body .link { padding: 0; color: var(--ink); background-size: 100% 1px; background-position: 0 100%; }
 .close--short { min-height: 0; padding-top: 0; }
 

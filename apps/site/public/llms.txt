@@ -122,3 +122,4 @@ Tools:
 - [Releases](https://github.com/ailio-technologies-inc/tailfuse/releases/latest)
 - [MIT license](https://github.com/ailio-technologies-inc/tailfuse/blob/main/LICENSE)
 - [Privacy](https://tailfuse.com/privacy)
+- [Terms](https://tailfuse.com/terms)
