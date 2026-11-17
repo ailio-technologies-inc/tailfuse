@@ -14,6 +14,12 @@ const stamp = path.join(outDir, ".version");
 const target = process.env.TAURI_ENV_TARGET_TRIPLE || execFileSync("rustc", ["--print", "host-tuple"], { encoding: "utf8" }).trim();
 const extension = target.includes("windows") ? ".exe" : "";
 const outputs = BINARIES.map((name) => path.join(outDir, `${name}-${target}${extension}`));
+// A universal Tauri build compiles each architecture separately before it
+// bundles the fat sidecar, so all three filenames are required.
+const requiredOutputs = target === "universal-apple-darwin"
+  ? BINARIES.flatMap((name) => ["aarch64", "x86_64", "universal"].map((architecture) =>
+    path.join(outDir, `${name}-${architecture}-apple-darwin`)))
+  : outputs;
 const license = path.join(outDir, "tailscale-LICENSE.txt");
 const modCache = execFileSync("go", ["env", "GOMODCACHE"], { encoding: "utf8" }).trim();
 
@@ -22,7 +28,7 @@ if (fs.existsSync(stamp) && fs.readFileSync(stamp, "utf8").trim() !== VERSION) {
 }
 fs.mkdirSync(outDir, { recursive: true });
 
-if (fs.existsSync(stamp) && outputs.every((file) => fs.existsSync(file)) && fs.existsSync(license)) {
+if (fs.existsSync(stamp) && requiredOutputs.every((file) => fs.existsSync(file)) && fs.existsSync(license)) {
   console.log(`Tailscale v${VERSION} sidecars already staged for ${target}`);
   process.exit(0);
 }
@@ -80,13 +86,11 @@ try {
     try {
       for (let i = 0; i < BINARIES.length; i++) {
         const name = BINARIES[i];
-        run("lipo", [
-          "-create",
-          built(arm, name, "darwin", "arm64"),
-          built(intel, name, "darwin", "amd64"),
-          "-output",
-          outputs[i],
-        ]);
+        const armOutput = path.join(outDir, `${name}-aarch64-apple-darwin`);
+        const intelOutput = path.join(outDir, `${name}-x86_64-apple-darwin`);
+        fs.copyFileSync(built(arm, name, "darwin", "arm64"), armOutput);
+        fs.copyFileSync(built(intel, name, "darwin", "amd64"), intelOutput);
+        run("lipo", ["-create", armOutput, intelOutput, "-output", outputs[i]]);
       }
     } finally {
       fs.rmSync(arm.dir, { recursive: true, force: true });
@@ -108,7 +112,7 @@ try {
       fs.rmSync(binary.dir, { recursive: true, force: true });
     }
   }
-  for (const output of outputs) fs.chmodSync(output, 0o755);
+  for (const output of requiredOutputs) fs.chmodSync(output, 0o755);
 
   // Module-cache files are read-only; do not propagate that mode to a file a
   // later target's staging run needs to replace.
