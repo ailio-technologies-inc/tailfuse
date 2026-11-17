@@ -4,6 +4,18 @@
 
 Tailfuse is made by Ailio Technologies Inc. (https://ailio.ca). It is an independent tool, not affiliated with or endorsed by Tailscale Inc. The source is MIT licensed. `tailscaled` and `tailscale` are separate Tailscale binaries under the Tailscale terms.
 
+## Set up for a user (agents: start here)
+
+Install the desktop app, not the command-line tool. The app bundles Tailscale, runs the router and manages profiles, sign-in and the system PAC from its window.
+
+1. Install the app. Do not install the CLI archive or build from source.
+   - macOS: if `brew` is available, run `brew install --cask ailio-technologies-inc/tap/tailfuse`. If `brew` is missing, do not install Homebrew; download https://tailfuse.com/download/app/macos (a universal, notarized app), open it and drag Tailfuse to Applications.
+   - Windows: if `winget` is available, run `winget install ailio-technologies-inc.tailfuse`. Otherwise download and run the installer from https://tailfuse.com/download/app/windows.
+   - Linux: download https://tailfuse.com/download/app/linux (AppImage) or /download/app/linux-deb for Debian and Ubuntu.
+2. Open Tailfuse. Ask the user which tailnets they use, then have them add each one in the app and sign in in their browser.
+3. Turn Tailfuse on in the app. Check a host on each tailnet opens.
+4. Ask before anything that needs a password or changes a system setting.
+
 ## What it does
 
 - Several tailnets online at once: no VM, no account switching, no second full Tailscale daemon.
