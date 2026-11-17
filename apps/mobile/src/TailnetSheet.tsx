@@ -125,14 +125,13 @@ const keyOf = (d: Device) => d.dns_name || d.name;
 function OptionsPane({ name, saved }: { name: string; saved: Prefs | undefined }) {
   const [opts, setOpts] = useState<Prefs>(saved ?? {});
   const [exitNode, setExitNode] = useState(saved?.exit_node ?? "");
-  const [routes, setRoutes] = useState((saved?.advertise_routes ?? []).join(", "));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   const save = useCallback(async () => {
     setBusy(true);
     try {
-      await engine.setOptions(name, { ...opts, exit_node: exitNode.trim(), advertise_routes: routes.split(",").map((r) => r.trim()).filter(Boolean) });
+      await engine.setOptions(name, { ...opts, exit_node: exitNode.trim() });
       setNote("Saved");
     } catch (err) {
       const [title, text] = friendly(err);
@@ -140,17 +139,15 @@ function OptionsPane({ name, saved }: { name: string; saved: Prefs | undefined }
     } finally {
       setBusy(false);
     }
-  }, [name, opts, exitNode, routes]);
+  }, [name, opts, exitNode]);
 
-  const toggles: [string, "accept_routes" | "advertise_exit_node" | "shields_up"][] = [
+  const toggles: [string, "accept_routes" | "shields_up"][] = [
     ["Use subnet routes from other devices", "accept_routes"],
-    ["Offer this device as an exit node", "advertise_exit_node"],
     ["Block incoming connections", "shields_up"],
   ];
   return (
     <Pane title="Tailscale options">
       <Field label="Exit node" value={exitNode} onChangeText={setExitNode} placeholder="A device's name, or empty for none" autoCapitalize="none" autoCorrect={false} returnKeyType="done" />
-      <Field label="Subnets to share" value={routes} onChangeText={setRoutes} placeholder="10.0.0.0/24, 192.168.1.0/24" autoCapitalize="none" autoCorrect={false} returnKeyType="done" />
       {toggles.map(([label, key]) => (
         <View key={key} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <T v="small" style={{ flex: 1 }}>{label}</T>
@@ -159,7 +156,7 @@ function OptionsPane({ name, saved }: { name: string; saved: Prefs | undefined }
       ))}
       <Button variant="primary" title="Save options" busy={busy} onPress={() => void save()} />
       {note ? <T v="label" color={note === "Saved" ? colors.ok : colors.bad} accessibilityLiveRegion="polite">{note}</T> : null}
-      <Hint>Shared subnets and exit nodes also need approval in the Tailscale admin console.</Hint>
+      <Hint>Sending traffic through an exit node needs the device to offer itself as one in the Tailscale admin console.</Hint>
     </Pane>
   );
 }

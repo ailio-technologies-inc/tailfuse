@@ -3,8 +3,6 @@
 export type Prefs = {
   exit_node?: string;
   accept_routes?: boolean;
-  advertise_routes?: string[];
-  advertise_exit_node?: boolean;
   shields_up?: boolean;
 };
 

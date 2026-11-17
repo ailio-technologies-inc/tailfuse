@@ -9,10 +9,9 @@ import (
 
 func TestSetOptionsSavedWhileOff(t *testing.T) {
 	e, dir, _ := domainEngine(t)
-	want := Prefs{ExitNode: "gateway", AcceptRoutes: true, AdvertiseRoutes: []string{"10.0.0.0/24"}, AdvertiseExitNode: true, ShieldsUp: true}
+	want := Prefs{ExitNode: "gateway", AcceptRoutes: true, ShieldsUp: true}
 	mustOK(t, e, "set_options", map[string]any{
-		"name": "home", "exit_node": "gateway", "accept_routes": true,
-		"advertise_routes": []string{"10.0.0.0/24"}, "advertise_exit_node": true, "shields_up": true,
+		"name": "home", "exit_node": "gateway", "accept_routes": true, "shields_up": true,
 	})
 	if got := readConfig(t, dir).Profiles["home"].Prefs; !reflect.DeepEqual(got, want) {
 		t.Fatalf("saved %+v, want %+v", got, want)
@@ -34,9 +33,8 @@ func TestSetOptionsSavedWhileOff(t *testing.T) {
 	}
 }
 
-func TestSetOptionsRejectsBadInput(t *testing.T) {
+func TestSetOptionsRejectsUnknownTailnet(t *testing.T) {
 	e, _, _ := domainEngine(t)
-	mustFail(t, e, "set_options", map[string]any{"name": "home", "advertise_routes": []string{"not-a-subnet"}}, "is not a subnet")
 	mustFail(t, e, "set_options", map[string]any{"name": "nowhere"}, "there is no tailnet called")
 }
 

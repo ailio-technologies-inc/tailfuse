@@ -229,26 +229,10 @@ func (n *tsNode) SetPrefs(ctx context.Context, p Prefs) error {
 	if err != nil {
 		return err
 	}
-	routes := make([]netip.Prefix, 0, len(p.AdvertiseRoutes)+2)
-	for _, r := range p.AdvertiseRoutes {
-		pf, err := netip.ParsePrefix(strings.TrimSpace(r))
-		if err != nil {
-			return err
-		}
-		routes = append(routes, pf.Masked())
-	}
-	if p.AdvertiseExitNode {
-		routes = append(routes, netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0"))
-	}
 	mp := &ipn.MaskedPrefs{
-		Prefs: ipn.Prefs{
-			RouteAll:        p.AcceptRoutes,
-			ShieldsUp:       p.ShieldsUp,
-			AdvertiseRoutes: routes,
-		},
-		RouteAllSet:        true,
-		ShieldsUpSet:       true,
-		AdvertiseRoutesSet: true,
+		Prefs:        ipn.Prefs{RouteAll: p.AcceptRoutes, ShieldsUp: p.ShieldsUp},
+		RouteAllSet:  true,
+		ShieldsUpSet: true,
 		// Clear any earlier exit node first; set below when one is wanted.
 		ExitNodeIDSet: true,
 		ExitNodeIPSet: true,

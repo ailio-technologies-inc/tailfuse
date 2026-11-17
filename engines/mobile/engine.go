@@ -1307,9 +1307,6 @@ func (e *Engine) SetOptions(name string, prefs Prefs) error {
 	if e.cfg.Profiles[name] == nil {
 		return fmt.Errorf("there is no tailnet called %q", name)
 	}
-	if err := prefs.Validate(); err != nil {
-		return err
-	}
 	cfg := e.cfg.Clone()
 	cfg.Profiles[name].Prefs = prefs
 	if err := e.commitLocked(cfg); err != nil {
