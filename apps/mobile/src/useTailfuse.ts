@@ -25,15 +25,18 @@ export function useTailfuse(onLimit?: (resume: UpgradeResume) => void) {
   });
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState<ErrorNote | null>(null);
-  const [powerBusy, setPowerBusy] = useState(false);
-  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  // While turning on or off: where the switch is going, so it doesn't snap back meanwhile.
+  const [powerTarget, setPowerTarget] = useState<boolean | null>(null);
+  // Tailnets being switched, each to where its switch is going.
+  const [pending, setPending] = useState<ReadonlyMap<string, boolean>>(new Map());
   // Which tailnet's sign-in is running ("" while a new one is being added), or null.
   const [signingIn, setSigningIn] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [permissionOpen, setPermissionOpen] = useState(false);
   const permissionResolve = useRef<((ok: boolean) => void) | null>(null);
   const alive = useRef(true);
-  const inflight = useRef(false);
+  const inflight = useRef<Promise<State | null> | null>(null);
+  const again = useRef<Promise<State | null> | null>(null);
   const lastPollError = useRef("");
 
   useEffect(() => {
@@ -53,9 +56,7 @@ export function useTailfuse(onLimit?: (resume: UpgradeResume) => void) {
     setError({ title, text });
   }, []);
 
-  const refresh = useCallback(async (): Promise<State | null> => {
-    if (inflight.current) return null;
-    inflight.current = true;
+  const readState = useCallback(async (): Promise<State | null> => {
     try {
       const s = await engine.getState();
       if (alive.current) setState((prev) => stabilize(prev, s));
@@ -67,10 +68,28 @@ export function useTailfuse(onLimit?: (resume: UpgradeResume) => void) {
       if (msg !== lastPollError.current) showError(err);
       lastPollError.current = msg;
       return null;
-    } finally {
-      inflight.current = false;
     }
   }, [showError]);
+
+  // One read at a time. A refresh asked for while one runs gets a fresh read after it (one, shared
+  // by every such caller), so the screen never keeps a state read from before an action.
+  const refresh = useCallback((): Promise<State | null> => {
+    const start = () => {
+      const run = readState().finally(() => {
+        if (inflight.current === run) inflight.current = null;
+      });
+      inflight.current = run;
+      return run;
+    };
+    if (!inflight.current) return start();
+    if (!again.current) {
+      again.current = inflight.current.then(() => {
+        again.current = null;
+        return start();
+      });
+    }
+    return again.current;
+  }, [readState]);
 
   // Refresh every 3 s in the foreground and on the engine's change event; pause in the background.
   useEffect(() => {
@@ -127,33 +146,35 @@ export function useTailfuse(onLimit?: (resume: UpgradeResume) => void) {
   }, [state?.up, askPermission]);
 
   const setPower = useCallback(async (on: boolean) => {
-    setPowerBusy(true);
+    setPowerTarget(on);
     try {
       if (on) await ensureOn();
       else await engine.stop();
     } catch (err) {
       showError(err);
     }
-    setPowerBusy(false);
-    refresh();
+    await refresh();
+    if (alive.current) setPowerTarget(null);
   }, [ensureOn, refresh, showError]);
 
   // ----- tailnets -----
 
   const setConnected = useCallback(async (name: string, on: boolean) => {
-    setPending((p) => new Set(p).add(name));
+    setPending((p) => new Map(p).set(name, on));
     try {
       await engine.setConnected(name, on);
       if (on) haptics.success();
     } catch (err) {
       showError(err);
     }
+    // Let go of the switch only once the screen shows the result.
+    await refresh();
+    if (!alive.current) return;
     setPending((p) => {
-      const n = new Set(p);
+      const n = new Map(p);
       n.delete(name);
       return n;
     });
-    refresh();
   }, [refresh, showError]);
 
   const remove = useCallback(async (kind: "profile" | "tunnel", name: string) => {
@@ -162,7 +183,7 @@ export function useTailfuse(onLimit?: (resume: UpgradeResume) => void) {
     } catch (err) {
       showError(err);
     }
-    refresh();
+    await refresh();
   }, [refresh, showError]);
 
   // Polls until `name` is online, or gone because the tailnet already existed; opens its sign-in
@@ -247,7 +268,8 @@ export function useTailfuse(onLimit?: (resume: UpgradeResume) => void) {
     dismissError: () => setError(null),
     showError,
     refresh,
-    powerBusy,
+    powerBusy: powerTarget !== null,
+    powerTarget,
     setPower,
     pending,
     setConnected,

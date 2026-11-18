@@ -56,6 +56,7 @@ function Screen() {
   const tf = useTailfuse((r) => openUpgrade.current(r));
   const s = tf.state;
   const device = deviceWord();
+  const power = tf.powerTarget ?? !!s?.up;
   const unlock = useUnlock(tf.refresh);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
@@ -142,8 +143,8 @@ function Screen() {
               <T v="h1">Tailfuse</T>
             </View>
             <View style={styles.power}>
-              <T v="label" medium color={s?.up ? colors.ok : colors.muted}>{s?.up ? "On" : "Off"}</T>
-              <Switch value={!!s?.up} label="Turn Tailfuse on or off" onValueChange={tf.setPower} disabled={!s || tf.powerBusy} />
+              <T v="label" medium color={power ? colors.ok : colors.muted}>{s ? (power ? "On" : "Off") : ""}</T>
+              <Switch value={power} label="Turn Tailfuse on or off" onValueChange={tf.setPower} disabled={!s || tf.powerBusy} />
               <IconButton onPress={() => setSheet("settings")} label="Settings">
                 <GearIcon />
               </IconButton>
@@ -208,7 +209,7 @@ function Screen() {
         visible={open("tailnet") && !!profile}
         profile={profile}
         up={!!s?.up}
-        toggling={!!profile && tf.pending.has(profile.name)}
+        target={profile ? tf.pending.get(profile.name) : undefined}
         onClose={close}
         onToggle={(on) => profile && tf.setConnected(profile.name, on)}
         onSignInAgain={() => {

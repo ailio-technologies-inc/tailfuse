@@ -17,7 +17,8 @@ type Props = {
   visible: boolean;
   profile: Profile | undefined;
   up: boolean;
-  toggling: boolean;
+  /** Where the switch is going while a change runs; undefined otherwise. */
+  target: boolean | undefined;
   onClose: () => void;
   onToggle: (on: boolean) => void;
   onSignInAgain: () => void;
@@ -246,7 +247,7 @@ function OptionsPane({ name, saved }: { name: string; saved: Prefs | undefined }
   );
 }
 
-export function TailnetSheet({ visible, profile: p, up, toggling, onClose, onToggle, onSignInAgain, onRemove }: Props) {
+export function TailnetSheet({ visible, profile: p, up, target, onClose, onToggle, onSignInAgain, onRemove }: Props) {
   const device = deviceWord();
   const { copied, copy } = useCopied();
   const [query, setQuery] = useState("");
@@ -339,7 +340,7 @@ export function TailnetSheet({ visible, profile: p, up, toggling, onClose, onTog
         {showSignIn(p) ? (
           <Button variant="primary" title="Sign in" label={`Sign in to ${p.name}`} onPress={onSignInAgain} />
         ) : (
-          <Switch value={switchOn(p, up)} label={`${p.name} connected`} onValueChange={onToggle} disabled={toggling} />
+          <Switch value={target ?? switchOn(p, up)} label={`${p.name} connected`} onValueChange={onToggle} disabled={target !== undefined} />
         )}
       </Card>
       {p.error ? <T v="small" color={colors.bad}>{p.error}</T> : null}

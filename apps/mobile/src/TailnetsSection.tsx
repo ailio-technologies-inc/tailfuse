@@ -12,10 +12,11 @@ const toneColor = { on: colors.ok, bad: colors.bad, wait: colors.accent, "": col
 // the tailnet's sheet.
 // Memoised: the 3-second poll hands back the same profile object when nothing changed, so a row only
 // renders when its own tailnet does.
-const TailnetRow = memo(function TailnetRow({ p, up, busy, signInBusy, onOpen, onSignIn, onToggle }: {
+const TailnetRow = memo(function TailnetRow({ p, up, target, signInBusy, onOpen, onSignIn, onToggle }: {
   p: Profile;
   up: boolean;
-  busy: boolean;
+  /** Where its switch is going while a change runs; undefined otherwise. */
+  target: boolean | undefined;
   signInBusy: boolean;
   onOpen: (name: string) => void;
   onSignIn: (name: string) => void;
@@ -43,7 +44,7 @@ const TailnetRow = memo(function TailnetRow({ p, up, busy, signInBusy, onOpen, o
       {showSignIn(p) ? (
         <Button variant="primary" title="Sign in" label={`Sign in to ${p.name}`} onPress={() => onSignIn(p.name)} disabled={signInBusy} />
       ) : (
-        <Switch value={switchOn(p, up)} label={`${p.name} connected`} onValueChange={(on) => onToggle(p.name, on)} disabled={busy} />
+        <Switch value={target ?? switchOn(p, up)} label={`${p.name} connected`} onValueChange={(on) => onToggle(p.name, on)} disabled={target !== undefined} />
       )}
     </PressableCard>
   );
@@ -125,7 +126,7 @@ export function EmptyState({ busy, message, onAdd, onSync }: { busy: boolean; me
 
 type Props = {
   state: State;
-  pending: ReadonlySet<string>;
+  pending: ReadonlyMap<string, boolean>;
   signingIn: string | null;
   message: string;
   onAdd: () => void;
@@ -144,7 +145,7 @@ export function TailnetsSection({ state, pending, signingIn, message, onAdd, onO
             key={p.name}
             p={p}
             up={up}
-            busy={pending.has(p.name)}
+            target={pending.get(p.name)}
             signInBusy={signingIn !== null}
             onOpen={onOpen}
             onSignIn={onSignIn}
