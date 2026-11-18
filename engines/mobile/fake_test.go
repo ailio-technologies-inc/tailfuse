@@ -112,6 +112,9 @@ type fakeState struct {
 	Account      string `json:"account"`
 	Tailnet      string `json:"tailnet"`
 	RequiresLogs bool   `json:"requires_logs"`
+	// Reconnecting: the keys are saved but control has not answered yet,
+	// so Tailscale reports NeedsLogin with no sign-in link.
+	Reconnecting bool `json:"reconnecting"`
 }
 
 type fakeNode struct {
@@ -265,6 +268,9 @@ func (n *fakeNode) Status(ctx context.Context) (NodeStatus, error) {
 	s, ok := n.load()
 	if !ok {
 		return NodeStatus{State: StateNeedsLogin, AuthURL: "https://login.example/a/" + n.opts.Name}, nil
+	}
+	if s.Reconnecting {
+		return NodeStatus{State: StateNeedsLogin}, nil
 	}
 	st := NodeStatus{
 		Hostname: n.opts.Hostname, IPs: []string{"100.64.0.7"},

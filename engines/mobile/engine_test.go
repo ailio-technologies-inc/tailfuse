@@ -732,3 +732,28 @@ func TestDeviceNameIsHostname(t *testing.T) {
 		t.Fatalf("device = %q after an unusable name", e.device)
 	}
 }
+
+// A node restarting with saved keys reports NeedsLogin until control answers:
+// that reads as connecting for loginSettle, and as a sign-in after it.
+func TestBareNeedsLoginSettlesBeforeSignIn(t *testing.T) {
+	fn := newFakeNet(t)
+	dir := t.TempDir()
+	c := NewConfig()
+	c.Profiles["work"] = &Profile{Suffixes: []string{".work.ts.net"}}
+	writeConfig(t, dir, c)
+	os.MkdirAll(filepath.Join(dir, "nodes", "work"), 0o700)
+	data, _ := json.Marshal(fakeState{Suffix: "work.ts.net", Account: "ada@example.com", Reconnecting: true})
+	os.WriteFile(filepath.Join(dir, "nodes", "work", "fake.json"), data, 0o600)
+	e, clock := newTestEngine(t, fn, dir)
+	if err := e.Start(dir); err != nil {
+		t.Fatal(err)
+	}
+	e.pollOnce()
+	if p := profile(getState(t, e), "work"); p.NeedsLogin || !p.Connecting {
+		t.Fatalf("just started: %+v", p)
+	}
+	clock.add(loginSettle)
+	if p := profile(getState(t, e), "work"); !p.NeedsLogin || p.Connecting {
+		t.Fatalf("after settling: %+v", p)
+	}
+}

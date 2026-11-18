@@ -62,7 +62,9 @@ public class TailfuseEngineModule: Module {
     AsyncFunction("isUp") { (promise: Promise) in
       DispatchQueue.main.async {
         self.loadManager { manager, _ in
-          promise.resolve(manager?.connection.status == .connected)
+          // Starting counts: `state` is answered locally then (see call), with the tailnets
+          // shown as connecting rather than off.
+          promise.resolve(manager.map { Self.isActive($0.connection.status) } ?? false)
         }
       }
     }
@@ -242,6 +244,11 @@ public class TailfuseEngineModule: Module {
         } catch {
           self.retry(request, promise, fellBack: fellBack)
         }
+      case .connecting where Self.isStateRead(request), .reasserting where Self.isStateRead(request):
+        // Launching while the tunnel comes up (always-on, or just switched on) would otherwise
+        // show nothing until it is up. Reading the state only reads the config, so answer here,
+        // as on: the tailnets then read "Connecting…" until the extension answers.
+        self.callLocally(request) { promise.resolve(Self.markedUp($0)) }
       case .connecting, .reasserting, .disconnecting:
         // The extension may already own the state folder: wait until it is clearly up or down.
         self.wait(on: session, timeout: startTimeout) { status in
@@ -269,19 +276,41 @@ public class TailfuseEngineModule: Module {
 
   /// The engine in this process, never started: only the "works off" commands succeed.
   private func callLocally(_ request: String, _ promise: Promise) {
+    callLocally(request) { promise.resolve($0) }
+  }
+
+  private func callLocally(_ request: String, _ done: @escaping (String) -> Void) {
     localQueue.async {
       if !self.stateDirGiven {
         guard
           let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
         else {
-          promise.resolve(Self.errorResponse("the app group container is missing"))
+          done(Self.errorResponse("the app group container is missing"))
           return
         }
         TfmobileSetStateDir(container.appendingPathComponent("tailfuse", isDirectory: true).path)
         self.stateDirGiven = true
       }
-      promise.resolve(TfmobileCall(request))
+      done(TfmobileCall(request))
     }
+  }
+
+  private static func isStateRead(_ request: String) -> Bool {
+    let json = try? JSONSerialization.jsonObject(with: Data(request.utf8)) as? [String: Any]
+    return json?["cmd"] as? String == "state"
+  }
+
+  /// A local `state` reply with "up" set, for while the tunnel is starting.
+  private static func markedUp(_ response: String) -> String {
+    guard
+      var json = try? JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any],
+      json["ok"] as? Bool == true,
+      var result = json["result"] as? [String: Any]
+    else { return response }
+    result["up"] = true
+    json["result"] = result
+    guard let data = try? JSONSerialization.data(withJSONObject: json) else { return response }
+    return String(decoding: data, as: UTF8.self)
   }
 
   // MARK: - The configuration

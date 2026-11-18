@@ -12,6 +12,7 @@ export interface TailfuseEngineNative {
   /** Asks for the VPN permission if needed, then turns Tailfuse on. */
   start(): Promise<void>;
   stop(): Promise<void>;
+  /** Tailfuse is on, or (iOS) its tunnel is starting. */
   isUp(): Promise<boolean>;
   /** One request, one response, both JSON as in engines/mobile/API.md. Never rejects for an engine error. */
   call(request: string): Promise<string>;

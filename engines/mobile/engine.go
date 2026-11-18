@@ -101,7 +101,16 @@ type nodeEntry struct {
 	tun    tun.Device // all-apps mode: the node's link in the Mux
 	status NodeStatus
 	err    string
+	// started is when the node was brought up; see loginSettle.
+	started time.Time
 }
+
+// loginSettle is how long after a node starts that a bare NeedsLogin (no
+// sign-in link) is read as still connecting. A node restarting with saved
+// keys reports NeedsLogin until its first round-trip with the control server,
+// which would flash "Sign in" on every start. A real sign-in comes with a
+// link, or is known from the config (SignedOut), so it shows at once.
+const loginSettle = 20 * time.Second
 
 // New returns an engine that is off.
 func New(opts Options) *Engine {
@@ -331,7 +340,7 @@ func (e *Engine) startNodeLocked(name string) {
 	if p == nil {
 		return
 	}
-	ne := &nodeEntry{}
+	ne := &nodeEntry{started: e.opts.Now()}
 	hostname := e.cfg.Hostname
 	if hostname == "" {
 		e.mu.RLock()
@@ -906,7 +915,7 @@ func (e *Engine) State() State {
 			}
 			if ps.Online {
 				ps.NeedsLogin = false
-			} else if s.State == StateNeedsLogin || s.AuthURL != "" {
+			} else if s.AuthURL != "" || (s.State == StateNeedsLogin && e.opts.Now().Sub(ne.started) >= loginSettle) {
 				ps.NeedsLogin = true
 			}
 			if ps.Account == "" {
