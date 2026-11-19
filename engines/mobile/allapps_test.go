@@ -180,8 +180,12 @@ func TestPacketsStartStopAndFallback(t *testing.T) {
 	if st.AllAppsError == "" || st.AllAppsActive || !st.AllApps {
 		t.Fatalf("fallback state %+v", st)
 	}
-	if !strings.HasSuffix(e.lastDomains, "all_apps=false") {
-		t.Fatalf("domains key %q", e.lastDomains)
+	// Under nmu: the learning loop writes it (changed) concurrently.
+	e.nmu.Lock()
+	domains := e.lastDomains
+	e.nmu.Unlock()
+	if !strings.HasSuffix(domains, "all_apps=false") {
+		t.Fatalf("domains key %q", domains)
 	}
 	if err := e.StartPacketsFD(-7, false); err == nil {
 		t.Fatal("bad fd accepted")
