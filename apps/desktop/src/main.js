@@ -295,6 +295,9 @@ let licenseFormOpen = false;
 function renderAllApps(a) {
   if (!a) return;
   $("#all-apps-row").hidden = !a.available;
+  // Not while the power switch's start or stop runs: the two would take the same lock in turn,
+  // and the second one's result would be read against a state the first one was changing.
+  $("#all-apps").disabled = allAppsBusy || Boolean(powerBusy);
   if (allAppsBusy) return;
   $("#all-apps").checked = a.on;
   const text = $("#all-apps-text");
@@ -479,7 +482,12 @@ if (!invoke) {
   });
 
   $("#power").addEventListener("change", async (e) => {
+    if (allAppsBusy) {
+      e.target.checked = !e.target.checked;
+      return;
+    }
     e.target.disabled = true;
+    $("#all-apps").disabled = true;
     powerBusy = e.target.checked ? "start" : "stop";
     $("#power-label").textContent = powerBusy === "start" ? "Starting…" : "Stopping…";
     $("#power-label").classList.add("busy");
