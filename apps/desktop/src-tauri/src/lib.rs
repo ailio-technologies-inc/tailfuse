@@ -58,6 +58,8 @@ pub(crate) struct ProfileView {
     pub(crate) account: String,
     /// Signed in but disconnected on purpose.
     pub(crate) paused: bool,
+    /// On, starting, not yet running, and no sign-in or problem known: shown as "Connecting…".
+    pub(crate) connecting: bool,
 }
 
 #[derive(Serialize)]
@@ -151,6 +153,7 @@ async fn get_state(app: AppHandle, state: State<'_, SharedState>) -> Result<Stat
                             .filter(|a| !a.is_empty())
                             .unwrap_or_else(|| prof.account.clone()),
                         paused: st.map(|s| s.paused).unwrap_or(false),
+                        connecting: st.map(|s| s.connecting).unwrap_or(false),
                     });
                 }
                 (true, views)
@@ -168,6 +171,7 @@ async fn get_state(app: AppHandle, state: State<'_, SharedState>) -> Result<Stat
                         error: String::new(),
                         account: prof.account.clone(),
                         paused: false,
+                        connecting: false,
                     })
                     .collect(),
             ),
@@ -1550,6 +1554,54 @@ fn fit_panel(app: AppHandle, height: f64) {
     }
 }
 
+/// A dialog in a native window of its own, beside the main window rather than over it: a tailnet's
+/// options (`kind` "options", one window per tailnet) or the phone code ("phone"). It loads the same
+/// page with `?view=`, which shows only that dialog (main.js). A second ask focuses the open one.
+#[tauri::command]
+fn open_sheet(app: AppHandle, kind: String, name: Option<String>) -> Result<(), String> {
+    let name = name.unwrap_or_default();
+    let (label, title, url, size) = match kind.as_str() {
+        "options" => {
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                return Err(format!("there is no tailnet called {name:?}"));
+            }
+            (
+                format!("options-{name}"),
+                format!("Options for {name}"),
+                format!("index.html?view=options&name={name}"),
+                (480.0, 700.0),
+            )
+        }
+        "phone" => (
+            "phone".to_string(),
+            "Set up your phone".to_string(),
+            "index.html?view=phone".to_string(),
+            (400.0, 540.0),
+        ),
+        other => return Err(format!("no window called {other:?}")),
+    };
+    if let Some(w) = app.get_webview_window(&label) {
+        let _ = w.unminimize();
+        return w.set_focus().map_err(|e| e.to_string());
+    }
+    let mut builder =
+        tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
+            .title(title)
+            .inner_size(size.0, size.1)
+            .min_inner_size(size.0, 360.0)
+            .resizable(true)
+            .minimizable(false)
+            .center();
+    if let Some(main) = app.get_webview_window("main") {
+        builder = builder.parent(&main).map_err(|e| e.to_string())?;
+    }
+    builder.build().map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn open_main_window(app: AppHandle) {
     show_main_window(&app);
@@ -1792,6 +1844,7 @@ pub fn run() {
             get_state,
             set_all_apps,
             engine_call,
+            open_sheet,
             phone_sync,
             start,
             stop,

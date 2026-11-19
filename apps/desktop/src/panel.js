@@ -7,6 +7,9 @@ const invoke = tauri ? tauri.invoke : isPreview ? (await import("./preview-stub.
 
 const $ = (s) => document.querySelector(s);
 
+/** True while the power switch's start or stop runs; refresh leaves the switch and the pill alone. */
+let powerBusy = false;
+
 async function refresh() {
   if (!invoke) return;
   let s;
@@ -15,10 +18,17 @@ async function refresh() {
   } catch {
     return;
   }
-  $("#power").checked = s.up;
+  // Mid start, the tailnets coming up show as connecting (see main.js `render`).
+  if (powerBusy && $("#power").checked && !s.up) {
+    s = { ...s, up: true, profiles: s.profiles.map((p) => (p.paused || p.online ? p : { ...p, connecting: true })) };
+  }
+  // Mid start or stop the switch keeps where it was moved (see main.js `powerBusy`).
+  if (!powerBusy) $("#power").checked = s.up;
   const online = s.profiles.filter((p) => p.online).length;
   const state = $("#state");
-  if (!s.up) {
+  if (powerBusy) {
+    // "Starting…" / "Stopping…", set by the switch, stays until its command answers.
+  } else if (!s.up) {
     state.textContent = "Stopped";
     state.className = "pill";
   } else if (online > 0) {
@@ -35,7 +45,7 @@ async function refresh() {
     const li = document.createElement("li");
     li.className = "row";
     const dot = document.createElement("span");
-    dot.className = `dot ${p.online ? "on" : ""}`;
+    dot.className = `dot ${p.online ? "on" : p.connecting && s.up ? "connecting" : ""}`;
     const main = document.createElement("div");
     main.className = "row-main";
     // The account a tailnet signed in with is what people recognise it by;
@@ -87,10 +97,16 @@ function escapeHtml(s) {
 $("#power").addEventListener("change", async (e) => {
   if (!invoke) return;
   e.target.disabled = true;
+  powerBusy = true;
+  const state = $("#state");
+  state.textContent = e.target.checked ? "Starting…" : "Stopping…";
+  state.className = "pill wait";
   try {
     await invoke(e.target.checked ? "start" : "stop");
   } catch (err) {
     invoke("notify_user", { title: "Tailfuse could not turn on", body: String(err) }).catch(() => {});
+  } finally {
+    powerBusy = false;
   }
   e.target.disabled = false;
   refresh();

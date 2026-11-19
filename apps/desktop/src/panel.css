@@ -122,3 +122,8 @@ body {
 .switch--sm input:checked + .slider { background: var(--ok); border-color: var(--ok); }
 .switch--sm input:checked + .slider::before { transform: translateX(16px); background: #ffffff; }
 .switch--sm input:focus-visible + .slider { outline: 2px solid var(--action); outline-offset: 2px; }
+
+/* A tailnet coming up: the dot breathes amber (main window: styles.css). */
+@keyframes connecting-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.dot.connecting { background: var(--accent, #ff4a1f); animation: connecting-breathe 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .dot.connecting { animation: none; } }
