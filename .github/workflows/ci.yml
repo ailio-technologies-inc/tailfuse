@@ -56,8 +56,10 @@ jobs:
         run: git rev-parse --verify -q main || git branch main origin/main
       - uses: jdx/mise-action@v2
         with:
-          # Only what these jobs run; go and node are for the mobile/site job below.
-          install_args: rust aqua:moonrepo/moon
+          # desktop:check stages the tailscale sidecars, which on macOS are built from source
+          # (stage-tailscale.mjs, a universal binary): without go every macOS run failed with
+          # "spawnSync go ENOENT" (pull requests #7 and #8).
+          install_args: rust go aqua:moonrepo/moon
       - uses: swatinem/rust-cache@v2
       - run: moon run desktop:check
 
