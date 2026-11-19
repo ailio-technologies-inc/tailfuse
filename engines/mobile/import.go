@@ -25,6 +25,10 @@ type syncProfile struct {
 	Suffixes []string `json:"suffixes"`
 	// accept_routes and exit_node are in the format too; the engine has no
 	// such settings yet, so they are ignored.
+	// TailscaleLogs: the tailnet requires Tailscale's logging and the person
+	// allowed it on the computer the link came from (API.md, "Tailscale's
+	// logging"). Kept for the tailnet here, new or already present.
+	TailscaleLogs bool `json:"tailscale_logs,omitempty"`
 }
 
 type syncSetup struct {
@@ -107,6 +111,7 @@ func (e *Engine) ImportSetup(link string, dryRun bool) (*SyncResult, error) {
 	res := &SyncResult{From: setup.From, Added: []string{}, Already: []string{}, NeedsUnlock: []string{}, TunnelsAdded: []string{}, Skipped: []SyncSkip{}}
 
 	// link profile name -> name on this phone, for the profiles that exist after the import
+	logsAllowed := false // an existing tailnet's logging, newly allowed by the link
 	local := map[string]string{}
 	locked := map[string]bool{}
 	seenLink := map[string]bool{}
@@ -154,6 +159,12 @@ func (e *Engine) ImportSetup(link string, dryRun bool) (*SyncResult, error) {
 			}
 		}
 		if existing != "" {
+			// One imported before the link carried the flag sits refused ("requires Tailscale's
+			// logging"); the person's own computer says they allowed it, so it is, without a re-add.
+			if sp.TailscaleLogs && cfg.Profiles[existing] != nil && !cfg.Profiles[existing].TailscaleLogs {
+				cfg.Profiles[existing].TailscaleLogs = true
+				logsAllowed = true
+			}
 			res.Already = append(res.Already, label)
 			local[sp.Name] = existing
 			continue
@@ -169,7 +180,7 @@ func (e *Engine) ImportSetup(link string, dryRun bool) (*SyncResult, error) {
 				Suffix: strings.TrimPrefix(suffixes[0], "."), Account: strings.TrimSpace(sp.Account),
 			})
 		}
-		cfg.Profiles[name] = &Profile{Suffixes: suffixes, SignedOut: true}
+		cfg.Profiles[name] = &Profile{Suffixes: suffixes, SignedOut: true, TailscaleLogs: sp.TailscaleLogs}
 		local[sp.Name] = name
 		res.Added = append(res.Added, label)
 	}
@@ -231,7 +242,9 @@ func (e *Engine) ImportSetup(link string, dryRun bool) (*SyncResult, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if dryRun || (len(res.Added) == 0 && len(res.TunnelsAdded) == 0) {
+	// logsAllowed alone is a change to save: an import that adds nothing still lets an existing
+	// tailnet's logging through (TestSyncCarriesTailscaleLogs).
+	if dryRun || (len(res.Added) == 0 && len(res.TunnelsAdded) == 0 && !logsAllowed) {
 		return res, nil
 	}
 	if err := e.commitLocked(cfg); err != nil {

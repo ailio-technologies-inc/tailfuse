@@ -298,3 +298,36 @@ func TestNeedsLoginAndConnecting(t *testing.T) {
 	}
 	_ = fn
 }
+
+// A tailnet that requires Tailscale's logging, allowed on the computer: the link says so, and the
+// tailnet here keeps it, whether it is new or was imported before the link carried the flag.
+func TestSyncCarriesTailscaleLogs(t *testing.T) {
+	e, dir, _ := offEngine(t)
+	plain := map[string]any{"v": 1, "from": "", "profiles": []any{
+		map[string]any{"name": "change", "suffixes": []string{".ojos.ts.net"}},
+	}, "tunnels": []any{}}
+	doImport(t, e, linkFor(plain), false)
+	if readConfig(t, dir).Profiles["change"].TailscaleLogs {
+		t.Fatal("no flag in the link, no logging")
+	}
+	// The flag alone, nothing new: still saved.
+	onlyLogs := map[string]any{"v": 1, "from": "", "profiles": []any{
+		map[string]any{"name": "change", "suffixes": []string{".ojos.ts.net"}, "tailscale_logs": true},
+	}, "tunnels": []any{}}
+	doImport(t, e, linkFor(onlyLogs), false)
+	if !readConfig(t, dir).Profiles["change"].TailscaleLogs {
+		t.Fatal("an import that adds nothing dropped the logging it allows")
+	}
+	withLogs := map[string]any{"v": 1, "from": "", "profiles": []any{
+		map[string]any{"name": "change", "suffixes": []string{".ojos.ts.net"}, "tailscale_logs": true},
+		map[string]any{"name": "fresh", "suffixes": []string{".fresh.ts.net"}, "tailscale_logs": true},
+	}, "tunnels": []any{}}
+	r := doImport(t, e, linkFor(withLogs), false)
+	if !reflect.DeepEqual(r.Already, []string{"change"}) || !reflect.DeepEqual(r.Added, []string{"fresh"}) {
+		t.Fatalf("result %+v", r)
+	}
+	cfg := readConfig(t, dir)
+	if !cfg.Profiles["change"].TailscaleLogs || !cfg.Profiles["fresh"].TailscaleLogs {
+		t.Fatalf("logging not kept: change %v fresh %v", cfg.Profiles["change"].TailscaleLogs, cfg.Profiles["fresh"].TailscaleLogs)
+	}
+}
