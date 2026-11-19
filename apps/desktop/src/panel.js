@@ -53,20 +53,24 @@ async function refresh() {
     const name = document.createElement("strong");
     name.textContent = p.account || p.name;
     name.title = p.account || p.name;
-    const status = p.online ? (p.ips?.[0] || "Connected") : p.paused ? "Disconnected" : s.up ? "Sign-in needed" : "Off";
+    const connecting = s.up && p.connecting && !p.online;
+    const needsSignIn = s.up && !p.online && !p.paused && !p.connecting && !p.error;
+    const status = p.online ? (p.ips?.[0] || "Connected") : p.error ? "Problem" : connecting ? "Connecting…" : p.paused ? "Off" : needsSignIn ? "Not signed in" : "Off";
     const sub = document.createElement("span");
     sub.className = "row-sub";
     const label = document.createElement("span");
-    label.textContent = p.account ? p.name : (p.suffixes[0] || "").replace(/^\./, "");
+    // The state first (what you act on); the tailnet's own name after it, cut first when short of room.
+    label.className = "row-domain";
+    label.textContent = p.account ? p.name : "";
     const stateEl = document.createElement("span");
-    stateEl.className = `row-state ${p.online ? "on" : ""}`;
+    stateEl.className = `row-state${p.online ? " on mono" : ""}${needsSignIn || p.error ? " wait" : ""}`;
     stateEl.textContent = status;
-    sub.append(...[label.textContent && label, stateEl].filter(Boolean));
+    sub.append(...[stateEl, label.textContent && label].filter(Boolean));
     main.append(name, sub);
     li.append(dot, main);
-    if (s.up && !p.online && !p.paused) {
+    if (needsSignIn) {
       const b = document.createElement("button");
-      b.className = "btn btn--primary btn--sm";
+      b.className = "row-action";
       b.dataset.login = p.name;
       b.textContent = "Sign in";
       li.append(b);

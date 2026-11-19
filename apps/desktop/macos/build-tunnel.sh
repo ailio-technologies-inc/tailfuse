@@ -2,7 +2,11 @@
 # Builds the Mac tunnel (all-apps mode, src-tauri/src/allapps.rs) into a built Tailfuse.app and
 # signs both with the provisioning profiles NetworkExtension requires.
 #
-#   apps/desktop/macos/build-tunnel.sh path/to/Tailfuse.app [--notarize]
+#   apps/desktop/macos/build-tunnel.sh path/to/Tailfuse.app [--notarize | --assemble-only]
+#
+# --assemble-only builds the extension into the bundle and stops: no profiles, no signing. The
+# release build on the Mac mini (infra host/tailfuse-release-macos) runs it, and the cluster's
+# notarize step (rcodesign, on Linux) adds the profiles and signs with the entitlements here.
 #
 # Needs: Xcode's command line tools; the engine framework (engines/mobile/scripts/build-engine.sh
 # macos, run here when missing); the Developer ID Application identity in the keychain; and two
@@ -13,13 +17,17 @@
 # scripts/notarize-macos.sh does. macOS loads a Developer ID system extension only once notarized.
 set -euo pipefail
 
-app="${1:?usage: $0 path/to/Tailfuse.app [--notarize]}"
-notarize="${2:-}"
+app="${1:?usage: $0 path/to/Tailfuse.app [--notarize | --assemble-only]}"
+mode="${2:-}"
+notarize=""
+[ "$mode" = "--notarize" ] && notarize="--notarize"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 identity="${TF_SIGN_IDENTITY:-Developer ID Application: Luigi Poole (N7TM93NL4Q)}"
-: "${TF_APP_PROFILE:?set TF_APP_PROFILE to the com.ailio.tailfuse Developer ID profile}"
-: "${TF_TUNNEL_PROFILE:?set TF_TUNNEL_PROFILE to the com.ailio.tailfuse.tunnel Developer ID profile}"
+if [ "$mode" != "--assemble-only" ]; then
+	: "${TF_APP_PROFILE:?set TF_APP_PROFILE to the com.ailio.tailfuse Developer ID profile}"
+	: "${TF_TUNNEL_PROFILE:?set TF_TUNNEL_PROFILE to the com.ailio.tailfuse.tunnel Developer ID profile}"
+fi
 [ -d "$app/Contents" ] || { echo "$app is not an app bundle" >&2; exit 1; }
 
 fw="$here/Frameworks/Tfmobile.xcframework/macos-arm64_x86_64"
@@ -41,6 +49,10 @@ rm -rf "$ext"
 mkdir -p "$ext/Contents/MacOS"
 lipo -create -output "$ext/Contents/MacOS/com.ailio.tailfuse.tunnel" "$work/tunnel-arm64" "$work/tunnel-x86_64"
 sed "s/__VERSION__/$version/g" "$here/TailfuseTunnel/Info.plist" >"$ext/Contents/Info.plist"
+if [ "$mode" = "--assemble-only" ]; then
+	echo "assembled the tunnel into $app ($version); not signed"
+	exit 0
+fi
 cp "$TF_TUNNEL_PROFILE" "$ext/Contents/embedded.provisionprofile"
 cp "$TF_APP_PROFILE" "$app/Contents/embedded.provisionprofile"
 

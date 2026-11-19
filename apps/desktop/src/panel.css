@@ -127,3 +127,49 @@ body {
 @keyframes connecting-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 .dot.connecting { background: var(--accent, #ff4a1f); animation: connecting-breathe 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .dot.connecting { animation: none; } }
+
+/* ---- 2026-11-18: a quieter popover, closer to a macOS menu-bar extra. ---- */
+.panel { border-radius: 14px; }
+.p-head { padding: 12px 14px; gap: 10px; }
+.p-head strong { font-size: 13.5px; }
+/* State is a line of text, not a bordered badge. */
+.pill { margin: 0; padding: 0; border: 0; background: none; font-size: 12px; font-weight: 400; color: var(--muted); }
+.pill.on { color: var(--ok); background: none; }
+.pill.wait { color: var(--muted); }
+/* The power switch is green when on, like every switch in the window and the rows below it. */
+.switch { width: 36px; height: 20px; }
+.slider::before { width: 14px; height: 14px; left: 2px; top: 2px; }
+.switch input:checked + .slider { background: var(--ok); border-color: var(--ok); }
+.switch input:checked + .slider::before { transform: translateX(16px); background: #ffffff; }
+.switch input:focus-visible + .slider { outline: 2px solid var(--ok); outline-offset: 2px; }
+
+/* Rows: no card per row; a soft highlight on hover. */
+.list { padding: 6px; gap: 2px; }
+.row { background: none; border: 0; border-radius: 8px; padding: 8px 8px; gap: 10px; }
+.row:hover { background: color-mix(in oklab, var(--p-ink) 6%, transparent); }
+.row-main strong { font-size: 13px; }
+.row-sub { font-size: 11.5px; }
+.row-state { font-family: var(--font-text); font-size: 11.5px; }
+.row-state.mono { font-family: var(--font-mono); font-size: 11px; }
+.row-state.wait { color: var(--accent); }
+.row-domain { min-width: 0; }
+
+/* A small action beside a row, not a full-size button. */
+.row-action {
+  flex: none; height: 24px; padding: 0 10px; border-radius: 6px;
+  font: 500 12px/1 var(--font-text); color: var(--p-ink);
+  background: color-mix(in oklab, var(--p-ink) 10%, transparent); border: 0; cursor: pointer;
+}
+.row-action:hover { background: color-mix(in oklab, var(--p-ink) 16%, transparent); }
+.row-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Footer: two menu items, full width, left-aligned. */
+.p-foot { flex-direction: column; gap: 0; padding: 6px; }
+.menu-item {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: none;
+  font: 400 13px/1 var(--font-text); color: var(--p-ink); text-align: left; cursor: pointer;
+}
+.menu-item:hover, .menu-item:focus-visible { background: color-mix(in oklab, var(--p-ink) 8%, transparent); outline: none; }
+.menu-item kbd { font: 400 11.5px/1 var(--font-text); color: var(--muted); background: none; border: 0; }
+.p-foot #open, .p-foot #quit { flex: none; padding: 0 10px; height: 30px; }
