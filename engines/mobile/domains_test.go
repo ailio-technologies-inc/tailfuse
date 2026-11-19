@@ -81,7 +81,11 @@ func TestSuggestDomainFromTestHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	fn.node("home").signIn(fakeState{Suffix: "home.ts.net", Account: "a@b.example"})
-	fn.node("home").learnIPs = []netip.Addr{netip.MustParseAddr("100.74.194.18")}
+	// Under the node's lock: the engine's learning loop reads it (Learn) from the moment Start returns.
+	home := fn.node("home")
+	home.mu.Lock()
+	home.learnIPs = []netip.Addr{netip.MustParseAddr("100.74.194.18")}
+	home.mu.Unlock()
 	res.set("ailio.dev", "100.74.194.18")
 	eventually(t, "learned", func() bool {
 		var r struct{ Owner *string }
