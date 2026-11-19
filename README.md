@@ -76,12 +76,16 @@ profiles:
     accept_routes: true          # behind a subnet router
     exit_node: exit-us           # optional per-tailnet exit node
     auth_key: tskey-auth-...     # optional unattended login
+    serve:                       # optional: publish a local service on this tailnet
+      - { port: 443, target: "http://localhost:3000" }   # funnel: true for the public internet
 tunnels:
   - name: prod-db
     profile: work
     listen: 127.0.0.1:5432
     target: db.work.ts.net:5432  # `psql -h 127.0.0.1 -p 5432`
 ```
+
+A profile also takes Tailscale's own node settings: `hostname`, `advertise_routes`, `advertise_exit_node`, `exit_node_allow_lan_access`, `ssh` (Linux only), `shields_up`, `advertise_tags` and `ephemeral`. `tailfuse profile add` has a flag for each.
 
 Suffix ownership is strict. Each suffix belongs to exactly one profile, and validation rejects overlapping suffixes. A hostname no profile owns is refused instead of being routed elsewhere, and that refusal is what keeps the tailnets isolated from each other.
 
@@ -93,10 +97,17 @@ Suffix ownership is strict. Each suffix belongs to exactly one profile, and vali
 | `tailfuse down` | Clear the system PAC |
 | `tailfuse status` | Per-profile state, hostname, Tailscale IPs |
 | `tailfuse test <host>` | Show which profile owns a hostname |
+| `tailfuse profile add/remove/list/login <name>` | Manage profiles; `login` signs one in through the browser |
+| `tailfuse profile import <name>` | Add the tailnet the official Tailscale app is signed in to, and sign it in |
 | `tailfuse ssh user@host.work.ts.net` | SSH through the owning profile (system `ssh` + ProxyCommand) |
 | `tailfuse run curl http://wiki.work.ts.net` | Run any command with proxy env (`socks5h`, remote DNS) |
 | `tailfuse env` | Print the proxy env for your shell |
 | `tailfuse tunnel add prod-db --listen 127.0.0.1:5432 --target db.work.ts.net:5432 --profile work` | Pin a local port to a tailnet service |
+| `tailfuse ts work netcheck` | Run any `tailscale` subcommand against one profile's node |
+| `tailfuse file work cp ./a.txt host:` / `file work get .` | Taildrop: send or receive files |
+| `tailfuse cert work this-mac.work.ts.net` | Get a Let's Encrypt certificate for the node's MagicDNS name |
+| `tailfuse lock work status` | Tailnet lock |
+| `tailfuse ping work host` / `tailfuse whois work 100.x.y.z` | Ping a device (direct or relayed), or see who is behind an IP |
 | `tailfuse phone` | Show a QR code that sets up the same tailnets in the phone app (setup only, no keys) |
 | `tailfuse serve-pac` | Just the PAC URL, for manual browser configuration |
 
@@ -104,13 +115,18 @@ Suffix ownership is strict. Each suffix belongs to exactly one profile, and vali
 
 - **Profiles:** one `tailscaled --tun=userspace-networking` subprocess per tailnet, with its own state dir, socket, and dedicated local SOCKS5 port. Nothing touches the kernel routing table.
 - **Router:** a single loopback listener accepts both SOCKS5 and HTTP CONNECT, matches the destination hostname against suffix ownership (longest match wins), and forwards to that profile's SOCKS5. A name no profile owns is refused, with no fallback.
-- **Names a tailnet serves:** beyond your suffixes, each tailnet's own split-DNS domains route to it automatically, and so does a custom domain pointed at one of its devices (like `ailio.dev` resolving to a `100.x` address). Tailfuse finds such a name the first time it resolves it, remembers that exact host, and re-checks it every 30 seconds. An address or domain two tailnets both claim is refused, never guessed. The PAC file only compares names, so browsers never make an extra DNS lookup for it.
-- **PAC:** a generated proxy auto-config sends only owned suffixes through the router and everything else direct. It is served live at `/tailfuse.pac` and applied to the OS on `up`.
+- **Names a tailnet serves:** beyond your suffixes, each tailnet's own split-DNS domains route to it automatically, and so does a custom domain pointed at one of its devices (like `ailio.dev` resolving to a `100.x` address). Tailfuse finds such a name the first time it resolves it, remembers that exact host, and re-checks it every 30 seconds. An address or domain two tailnets both claim is refused, never guessed.
+- **PAC:** a generated proxy auto-config sends owned suffixes through the router and everything else direct. A name it does not list is resolved once, and goes through the router only if it resolves into Tailscale's range (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`). Each route is named both `SOCKS5` and `SOCKS`, because Safari and other apps on the system proxy only understand the second. The PAC is served live at `/tailfuse.pac` and applied to the OS on `up`.
+- **HTTPS-only hosts:** when a tailnet host refuses port 80, the router answers an `http://` request with a redirect to `https://` instead of a reset.
 - **Isolation:** profiles share no state, sockets, or routes, and config validation rejects overlapping suffixes.
 
 ## Desktop app
 
-A Tauri menu-bar app (`apps/desktop/`) wraps the same core and bundles its own pinned Tailscale runtime. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. It runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL. It asks once before setting it, and never overwrites a PAC URL it did not set.
+A Tauri menu-bar app (`apps/desktop/`) wraps the same core and bundles its own pinned Tailscale runtime. On macOS it is an accessory app: no Dock icon, a menu-bar panel with a switch per tailnet, and a window for everything else. Signing in opens Tailscale's browser flow, and the tailnet's name and account fill themselves in. Credentials sit in the macOS Keychain or Windows Credential Manager, never in the config file. By default it runs entirely as your user, with no root helper and no kernel extension; the one system setting it touches is the PAC URL. It asks once before setting it, and never overwrites a PAC URL it did not set.
+
+Each tailnet has an Options window for its Tailscale settings (exit node, subnet routes, LAN access, shields-up, tags, Serve and Funnel), Taildrop (send with the file picker, receive to Downloads), an HTTPS certificate and tailnet lock. There is also a box for running any `tailscale` command against one tailnet.
+
+**Every app (macOS).** The proxy reaches only programs that honor the system proxy. Settings > Every app turns on a NetworkExtension packet tunnel that runs the phone apps' engine, so every program (ssh, database tools, Node, curl) reaches every tailnet by name and by `100.x` address, the way the Tailscale app does for one. The tunnel is its own device on each tailnet, so each tailnet signs in once more. macOS asks you to allow the system extension and a VPN configuration the first time. An app update also replaces the running extension and reconnects it. The switch is hidden in builds without the extension. See [apps/desktop/macos/README.md](apps/desktop/macos/README.md).
 
 To set up the phone app, open Settings and choose Set up your phone (or run `tailfuse phone`). The code carries your tailnets, their suffixes and local ports; it never carries passwords, auth keys or the license, so you sign in to each tailnet once on the phone.
 
@@ -152,9 +168,10 @@ It works against the running Tailfuse (the app, or `tailfuse up`).
 | `crates/tailfuse-cli` | The `tailfuse` binary (also used by the app's SSH path) |
 | `crates/licgen` | Vendor-only license key signer (not distributed) |
 | `apps/desktop/` | Tauri menu-bar app (Rust + vanilla frontend), with automatic updates |
+| `apps/desktop/macos/` | The macOS Every app tunnel: a NetworkExtension system extension and its Swift control library |
 | `apps/site/` | tailfuse.com: a Cloudflare Worker with static assets (downloads, license keys, Stripe receipts) |
 | `apps/mobile/` | The iOS and Android app: an Expo interface plus native VPN shells (not yet released) |
-| `engines/mobile/` | The Go engine behind the phone apps, with the gomobile bindings (`scripts/build-engine.sh`) |
+| `engines/mobile/` | The Go engine behind the phone apps and the macOS tunnel, with the gomobile bindings (`scripts/build-engine.sh`) |
 | `brand/` | The icon and mark sources; `scripts/gen-icons.sh` renders every app icon from them |
 | `scripts/` | `release.sh` (cut a release), `screenshots.sh`, `gen-icons.sh`, `notarize-macos.sh` (manual fallback) |
 | `docs/` | `RELEASING.md` and the screenshots |
@@ -177,11 +194,11 @@ Cargo is one workspace with one `target/` at the root; moon does not cache it, c
 
 ## Phone apps
 
-There are iOS and Android apps in `apps/mobile`: an Expo (React Native) interface over a Go engine in `engines/mobile` that runs one embedded Tailscale node per tailnet, with the same hostname-suffix routing as the desktop core. Two tailnets are free; more are a one-time in-app purchase. By default every app on the phone reaches every tailnet, by name and by raw `100.x` address, the way the Tailscale app does for one: the engine routes Tailscale's ranges into the VPN and hands each packet to the owning tailnet's WireGuard engine, giving devices that two tailnets number alike their own stable `198.18.x.x` address. A switch in Settings drops back to proxy mode, where only browsers and other proxy-aware apps do. They are not released yet: proxy mode has run on an iPhone, all-apps mode not yet on a device.
+There are iOS and Android apps in `apps/mobile`: an Expo (React Native) interface over a Go engine in `engines/mobile` that runs one embedded Tailscale node per tailnet, with the same hostname-suffix routing as the desktop core. Two tailnets are free; more are a one-time in-app purchase. By default every app on the phone reaches every tailnet, by name and by raw `100.x` address, the way the Tailscale app does for one: the engine routes Tailscale's ranges into the VPN and hands each packet to the owning tailnet's WireGuard engine, giving devices that two tailnets number alike their own stable `198.18.x.x` address. A switch in Settings drops back to proxy mode, where only browsers and other proxy-aware apps do. Each tailnet has its own Tailscale options (exit node, shared subnets, shields-up) and Taildrop for sending and receiving files. They are not released yet: proxy mode has run on an iPhone, all-apps mode not yet on a device.
 
 ```sh
 cd apps/mobile && npm ci && npx expo start --web    # preview the interface in a browser, with a mock engine
-engines/mobile/scripts/build-engine.sh ios          # build the engine bindings (or: android, all)
+engines/mobile/scripts/build-engine.sh ios          # build the engine bindings (or: android, macos, all)
 moon run mobile-engine:test mobile:typecheck mobile:test
 ```
 
