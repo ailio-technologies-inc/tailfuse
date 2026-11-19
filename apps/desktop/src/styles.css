@@ -311,3 +311,20 @@ code:empty { display: none; }
 #version { color: var(--muted); font-weight: 400; margin-left: 4px; }
 .about-links { display: inline-flex; gap: 14px; }
 .set-row--sub .muted { font-size: var(--t-small); }
+
+/* A dialog in a window of its own (?view=options|phone, open_sheet in lib.rs): the window's native
+   title bar names it, and the dialog is the whole page instead of a card over the main window. */
+.windowed body > :not(dialog) { display: none !important; }
+.windowed body { background: var(--card); overflow-y: auto; display: block; }
+.windowed .dialog { position: static; width: 100%; max-width: none; min-height: 100vh; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+.windowed .dialog h2 { display: none; }
+
+/* Connecting: quiet, never a spinner. A tailnet's dot breathes amber and its label says so; the
+   power label breathes while a start or stop runs. Still for anyone who asks for less motion. */
+@keyframes connecting-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.dot.connecting { background: var(--accent); animation: connecting-breathe 1.6s var(--ease) infinite; }
+.state.pill-connecting { color: var(--muted); }
+.power-label.busy { animation: connecting-breathe 1.6s var(--ease) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .dot.connecting, .power-label.busy { animation: none; }
+}

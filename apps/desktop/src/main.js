@@ -9,6 +9,13 @@ if (window.__TAURI__?.webviewWindow?.getCurrentWebviewWindow) {
   if (me.label === "panel") location.replace("panel.html");
 }
 
+// A dialog in a window of its own (open_sheet in lib.rs): this same page with ?view=options or
+// ?view=phone shows only that dialog, under a native title bar, and closes its window when done.
+const params = new URLSearchParams(location.search);
+const view = params.get("view");
+if (view) document.documentElement.classList.add("windowed");
+const closeWindow = () => window.__TAURI__?.window?.getCurrentWindow?.().close();
+
 const tauri = window.__TAURI__?.core;
 const isPreview = !tauri && location.protocol === "http:" && location.port !== "";
 const invoke = tauri ? tauri.invoke : isPreview ? (await import("./preview-stub.js")).invoke : null;
@@ -95,11 +102,13 @@ function statusLine(s) {
   if (!s.up) return `Tailfuse is off. Turn it on to reach your ${total === 1 ? "tailnet" : `${total} tailnets`}.`;
   const online = s.profiles.filter((p) => p.online).length;
   // Switched off on purpose (paused) is not waiting for a sign-in.
-  const waiting = s.profiles.filter((p) => !p.online && !p.error && !p.paused);
+  const connecting = s.profiles.filter((p) => p.connecting && !p.online && !p.error);
+  const waiting = s.profiles.filter((p) => !p.online && !p.error && !p.paused && !p.connecting);
   const off = s.profiles.filter((p) => p.paused && !p.online).length;
   const offNote = off ? ` ${off} switched off.` : "";
   const broken = s.profiles.filter((p) => p.error);
   if (broken.length) return `${broken[0].name} has a problem. See the note beside it.`;
+  if (connecting.length) return `Connecting to ${connecting.map((p) => p.name).join(" and ")}…`;
   if (waiting.length) return `Sign in to ${waiting.map((p) => p.name).join(" and ")} to bring ${waiting.length === 1 ? "it" : "them"} online.`;
   if (s.proxy_problem) return `${plural(online, "tailnet")} online. One more step before your apps can reach ${online === 1 ? "it" : "them"}.`;
   if (online === 0) return `Every tailnet is switched off. Turn one on below.`;
@@ -123,6 +132,7 @@ function tailnetState(p, up) {
   if (p.online) return ["Connected", "pill-on"];
   if (!up) return ["Off", ""];
   if (p.paused) return ["Disconnected", ""];
+  if (p.connecting) return ["Connecting…", "pill-connecting"];
   return ["Sign-in needed", "pill-wait"];
 }
 
@@ -152,9 +162,9 @@ function profileEntry(p, up) {
   const ips = p.ips.filter(Boolean);
   // Hover or focus shows these in a card that floats over the list, so nothing below moves.
   const details = [p.hostname && ["This Mac's name", p.hostname], ...ips.map((ip) => [ip.includes(":") ? "IPv6" : "IPv4", ip]), p.account && ["Name in Tailfuse", p.name]].filter(Boolean);
-  const needsSignIn = up && !p.online && !p.paused && !p.error;
+  const needsSignIn = up && !p.online && !p.paused && !p.error && !p.connecting;
   return h("li", { class: "entry entry--tailnet", tabIndex: 0 },
-    h("span", { class: `dot${p.online ? " on" : ""}${p.error ? " bad" : ""}` }),
+    h("span", { class: `dot${p.online ? " on" : ""}${p.error ? " bad" : ""}${up && p.connecting ? " connecting" : ""}` }),
     h("div", { class: "entry-main" },
       h("div", { class: "entry-line" },
         // Shown by the account it signed in with, like the menu-bar panel; the profile name follows.
@@ -226,7 +236,13 @@ async function openOptions(name) {
   $("#o-ssh").checked = o.ssh;
   $("#o-shields").checked = o.shields_up;
   $("#o-out").hidden = true;
-  $("#options").showModal();
+  if (view) $("#options").show();
+  else $("#options").showModal();
+}
+
+/** Options and the phone code open in a native window of their own (lib.rs `open_sheet`). */
+function openSheet(kind, name) {
+  return call("open_sheet", { kind, name: name ?? null }).catch(() => {});
 }
 
 async function saveOptions() {
@@ -290,14 +306,30 @@ function renderAllApps(a) {
 }
 
 let allAppsBusy = false;
+/** "start" or "stop" while the power switch's command runs. */
+let powerBusy = null;
 
 function render(s) {
+  // Mid start, the app reports itself off until every node answers (about 10 s): show what is
+  // happening instead, every tailnet that is coming up as connecting.
+  if (powerBusy === "start" && !s.up) {
+    s = { ...s, up: true, profiles: s.profiles.map((p) => (p.paused || p.online ? p : { ...p, connecting: true })) };
+  }
   renderAllApps(s.all_apps);
   lastState = s;
   if (s.version) $("#version").textContent = s.version;
-  $("#power").checked = s.up;
-  $("#power-label").textContent = s.up ? "On" : "Off";
-  $("#power-label").classList.toggle("on", s.up);
+  // While a start or stop runs (about 10 s with two tailnets), the switch keeps the position it
+  // was moved to: the 3-second refresh used to flip it back to Off mid-start, so turning Tailfuse on
+  // looked like it had not worked.
+  if (powerBusy) {
+    $("#power-label").textContent = powerBusy === "start" ? "Starting…" : "Stopping…";
+    $("#power-label").classList.add("busy");
+  } else {
+    $("#power-label").classList.remove("busy");
+    $("#power").checked = s.up;
+    $("#power-label").textContent = s.up ? "On" : "Off";
+    $("#power-label").classList.toggle("on", s.up);
+  }
   $("#status").textContent = statusLine(s);
   $("#license").textContent = s.license;
   const licensed = !!s.licensed_to;
@@ -373,7 +405,7 @@ async function showPhoneCode() {
   $("#phone-carries").textContent = line;
   $("#phone-copy").textContent = "Copy link";
   const dialog = $("#phone");
-  if (!dialog.open) dialog.showModal();
+  if (!dialog.open) view ? dialog.show() : dialog.showModal();
 }
 
 // The system proxy needs an administrator. Explain first in the window; only after OK does
@@ -381,12 +413,21 @@ async function showPhoneCode() {
 // button asks again whenever.
 let askedThisLaunch = false;
 async function askPermission() {
-  const dialog = $("#permission");
-  if (dialog.open) return;
-  dialog.returnValue = "";
-  dialog.showModal();
-  const answer = await new Promise((resolve) => dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true }));
-  if (answer !== "ok") return;
+  if (asking) return;
+  asking = true;
+  let ok;
+  try {
+    // A native alert, macOS's own style (tauri-plugin-dialog), rather than a sheet in the page.
+    ok = await window.__TAURI__.dialog.ask(
+      "To reach your tailnets, Tailfuse sets your Mac's system proxy. Apps that follow the system setting, including your browsers, then send tailnet addresses through Tailfuse and everything else directly.\n\nmacOS will ask for your password next. You only do this once.",
+      { title: "Tailfuse needs your permission", kind: "info", okLabel: "OK", cancelLabel: "Not now" },
+    );
+  } catch {
+    ok = false;
+  } finally {
+    asking = false;
+  }
+  if (!ok) return;
   $("#proxy-fix").disabled = true;
   try {
     await call("connect_browsers");
@@ -396,6 +437,7 @@ async function askPermission() {
   $("#proxy-fix").disabled = false;
   refresh();
 }
+let asking = false;
 
 function maybeAskPermission(s) {
   if (s.up && s.proxy_problem === "permission" && !askedThisLaunch) {
@@ -438,10 +480,17 @@ if (!invoke) {
 
   $("#power").addEventListener("change", async (e) => {
     e.target.disabled = true;
+    powerBusy = e.target.checked ? "start" : "stop";
+    $("#power-label").textContent = powerBusy === "start" ? "Starting…" : "Stopping…";
+    $("#power-label").classList.add("busy");
+    if (lastState && powerBusy === "start") render(lastState);
+    else $("#status").textContent = "Stopping your tailnets…";
     try {
-      await call(e.target.checked ? "start" : "stop");
+      await call(powerBusy);
     } catch {
       // the error line already says why
+    } finally {
+      powerBusy = null;
     }
     e.target.disabled = false;
     refresh();
@@ -477,7 +526,7 @@ if (!invoke) {
     }
     if (target.id === "show-add-tunnel") return toggleForm("add-tunnel", true);
 
-    if (target.dataset.options) return openOptions(target.dataset.options);
+    if (target.dataset.options) return openSheet("options", target.dataset.options);
 
     if (target.dataset.login) {
       await call("login", { name: target.dataset.login }).catch(() => {});
@@ -503,9 +552,11 @@ if (!invoke) {
     }
 
     if (target.id === "phone-show") {
+      if (view) return;
       target.disabled = true;
       try {
-        await showPhoneCode();
+        await invoke("phone_sync"); // says why now, in this window, when there is nothing to carry
+        await openSheet("phone");
       } catch (err) {
         $("#phone-text").textContent = friendly(err)[1];
       }
@@ -694,6 +745,17 @@ if (!invoke) {
     .then((v) => ($("#autostart").checked = v))
     .catch(() => {});
 
-  refresh();
-  setInterval(refresh, 3000);
+  if (view === "options") {
+    $("#options").addEventListener("close", closeWindow);
+    openOptions(params.get("name") ?? "");
+  } else if (view === "phone") {
+    $("#phone").addEventListener("close", closeWindow);
+    showPhoneCode().catch((err) => {
+      $("#phone-carries").textContent = friendly(err)[1];
+      $("#phone").show();
+    });
+  } else {
+    refresh();
+    setInterval(refresh, 3000);
+  }
 }

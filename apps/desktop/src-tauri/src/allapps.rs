@@ -169,6 +169,7 @@ pub fn profiles(engine_state: &serde_json::Value) -> Vec<crate::ProfileView> {
                 error,
                 account: s("account"),
                 paused: p["paused"].as_bool().unwrap_or(false),
+                connecting: p["connecting"].as_bool().unwrap_or(false),
             }
         })
         .collect()
