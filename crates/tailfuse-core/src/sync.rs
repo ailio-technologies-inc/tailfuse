@@ -46,6 +46,11 @@ struct ProfileOut<'a> {
     accept_routes: bool,
     #[serde(skip_serializing_if = "str::is_empty")]
     exit_node: &'a str,
+    /// The tailnet requires Tailscale's logging, and this computer's person allowed it when they
+    /// signed in to it. A setup fact, not a credential: without it the other device's node is
+    /// refused ("requires logging") and the tailnet has to be removed and added again there.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    tailscale_logs: bool,
 }
 
 #[derive(Serialize)]
@@ -69,6 +74,7 @@ fn encode(cfg: &Config, from: &str, with_tunnels: bool) -> Result<String> {
                 suffixes: &p.suffixes,
                 accept_routes: p.accept_routes,
                 exit_node: &p.exit_node,
+                tailscale_logs: p.tailscale_logs,
             })
             .collect(),
         tunnels: if with_tunnels {
@@ -270,6 +276,15 @@ mod tests {
         assert!(!json.contains("auth_key"));
         assert!(!json.contains("license"));
         assert!(!out.link.contains("SECRET"));
+    }
+
+    #[test]
+    fn carries_tailscale_logs_only_when_the_tailnet_needs_it() {
+        let mut cfg = sample();
+        assert!(!decode(&link(&cfg, "Mac").unwrap().link).contains("tailscale_logs"));
+        let name = cfg.profiles.keys().next().unwrap().clone();
+        cfg.profiles.get_mut(&name).unwrap().tailscale_logs = true;
+        assert!(decode(&link(&cfg, "Mac").unwrap().link).contains(r#""tailscale_logs":true"#));
     }
 
     #[test]

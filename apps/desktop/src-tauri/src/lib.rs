@@ -1825,7 +1825,8 @@ pub fn run() {
             // All-apps mode: this build's tunnel replaces the one macOS is running (allapps::refresh_extension).
             if let Some(state) = app.try_state::<SharedState>() {
                 if allapps::is_on(&state.cfg_path) {
-                    tauri::async_runtime::spawn(async {
+                    let state = Arc::clone(&state);
+                    tauri::async_runtime::spawn(async move {
                         if let Err(e) = allapps::refresh_extension(
                             sync::computer_name(),
                             open_extension_settings,
@@ -1833,6 +1834,14 @@ pub fn run() {
                         .await
                         {
                             tracing::warn!("all apps: updating the tunnel: {e}");
+                        }
+                        // The setup again (import_setup skips what the tunnel has): what this build's link
+                        // carries that an older one did not, such as a tailnet's logging, reaches it.
+                        if allapps::status().await == "connected" {
+                            let cfg = state.cfg.lock().await.clone();
+                            if let Err(e) = allapps::import(&cfg, &sync::computer_name()).await {
+                                tracing::warn!("all apps: handing the setup over again: {e}");
+                            }
                         }
                     });
                 }

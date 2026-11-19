@@ -325,7 +325,8 @@ running tailnet needs logging, every node in the process runs with logging allow
 reports `"tailscale_logs": true` so the app can say so. The engine restarts all nodes when this
 changes (for example when that tailnet is removed or switched off). An existing tailnet that starts
 requiring logging gets an `error` asking to remove it and add it again; logging is never turned on
-without a sign-in.
+without a sign-in, or a setup link from the person's own computer that says they allowed it there
+(`import_setup`, `tailscale_logs`).
 
 ## Engine details (as built)
 
@@ -381,7 +382,9 @@ tailfuse://sync?v=1&d=<base64url, no padding, of the UTF-8 JSON below>
       "account": "ada@example.com", // "" when unknown
       "suffixes": [".work.ts.net", ".internal.example"],  // leading dot, as in the config
       "accept_routes": true,        // optional
-      "exit_node": "exit-us"        // optional
+      "exit_node": "exit-us",       // optional
+      "tailscale_logs": true        // optional: the tailnet requires Tailscale's logging and the computer's
+                                    // person allowed it; kept for the tailnet here, new or already present
     }
   ],
   "tunnels": [
