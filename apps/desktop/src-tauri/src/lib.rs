@@ -1822,6 +1822,21 @@ pub fn run() {
             }
             build_tray(app.handle())?;
             spawn_tray_animation(app.handle().clone());
+            // All-apps mode: this build's tunnel replaces the one macOS is running (allapps::refresh_extension).
+            if let Some(state) = app.try_state::<SharedState>() {
+                if allapps::is_on(&state.cfg_path) {
+                    tauri::async_runtime::spawn(async {
+                        if let Err(e) = allapps::refresh_extension(
+                            sync::computer_name(),
+                            open_extension_settings,
+                        )
+                        .await
+                        {
+                            tracing::warn!("all apps: updating the tunnel: {e}");
+                        }
+                    });
+                }
+            }
             // Updates from GitHub Releases; relaunches only while Tailfuse is off.
             if let Some(state) = app.try_state::<SharedState>() {
                 let state = Arc::clone(&state);
