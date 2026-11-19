@@ -17,3 +17,6 @@ apps/desktop/src/preview-stub.js
 # moon
 .moon/cache/
 .moon/docker/
+
+# the engine framework for the Mac tunnel (engines/mobile/scripts/build-engine.sh macos)
+apps/desktop/macos/Frameworks/
