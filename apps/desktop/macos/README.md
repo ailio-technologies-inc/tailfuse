@@ -46,6 +46,16 @@ Items & Extensions) and to allow a VPN configuration.
 The App Store Connect key on the owner's laptop can read the account but not change it (403), so
 these are made by hand at developer.apple.com, or with a key that has the Admin role.
 
+## In a release
+
+Releases ship the tunnel. The release build on the Mac mini (infra `tailfuse-release-macos`) runs
+`build-engine.sh macos` and `build-tunnel.sh --assemble-only`, which puts the extension in the
+bundle unsigned. The cluster's `tailfuse-notarize` (rcodesign, on Linux) then embeds the two
+Developer ID profiles from its secret store (infra `bake-host/signing-secrets.json`), signs the
+extension with `TailfuseTunnel/TailfuseTunnel.entitlements` and the app with
+`Tailfuse.entitlements`, and notarizes and staples. Both profiles expire in 2044. A build
+without the extension hides the switch (`allapps::available`).
+
 ## The window in all-apps mode
 
 The window, the tray and the menu-bar icon read the tunnel's engine. Signing in, switching a
@@ -56,12 +66,6 @@ switching all-apps mode off later finds the same setup.
 
 ## Open work
 
-- **Release lanes.** A release builds the app without the tunnel until the profiles exist, and
-  the switch hides itself in a build without it (`allapps::available`). Once they do:
-  `release.yml`'s macOS job runs `build-engine.sh macos` and `build-tunnel.sh` up to the bundle
-  (no signing), and the cluster's `tailfuse-notarize` (rcodesign, on Linux) signs the extension
-  with `TailfuseTunnel/TailfuseTunnel.entitlements` and the app with `Tailfuse.entitlements`, with
-  the two profiles from the cluster's secret store (infra `bake-host/signing-secrets.json`).
 - A tailnet first signed in from the tunnel exists only in the tunnel's engine; switching all-apps
   mode off does not bring it to the app's own nodes.
 - Windows and Linux: not started (a WinTun / TUN equivalent of the same engine).

@@ -12,9 +12,11 @@ Every desktop build runs `apps/desktop/scripts/stage-tailscale.mjs`. It builds t
 
 | Where | What |
 |---|---|
-| GitHub Actions (`.github/workflows/release.yml`) | Builds the macOS app (universal, ad-hoc signed) and CLI, the Windows installer and CLI, the Linux AppImage and .deb. App builds are signed with the updater key (`TAURI_SIGNING_PRIVATE_KEY`, a repository secret), so Windows and Linux upload their `.sig` files beside the installers. macOS uploads `…-macos-universal-unsigned.app.tar.gz` last, for the cluster. |
-| The Ailio cluster (Dagu `tailfuse-release`, queued by the tag's webhook) | Builds the Linux CLI binaries. Then `tailfuse-notarize`, on Linux with rcodesign: signs the macOS app and CLI with the Developer ID, notarizes and staples them, publishes `…-macos-universal.zip` and the notarized updater bundle `…-macos-universal.app.tar.gz` with its `.sig`, writes `latest.json` from every platform's signature, and moves the Homebrew cask to the new version. |
+| GitHub Actions (`.github/workflows/release.yml`) | Builds only the Linux menu-bar app (AppImage and .deb), signed with the updater key (`TAURI_SIGNING_PRIVATE_KEY`, a repository secret), and creates the release if no other lane has yet. |
+| The Ailio cluster (Dagu `tailfuse-release`, queued by the tag's webhook) | Builds the CLI archives for every platform. `tailfuse-release-windows` builds the Windows installer with its updater `.sig`. `tailfuse-release-macos`, on the Mac mini, builds the universal app with the Every app tunnel assembled in, unsigned (`apps/desktop/macos/build-tunnel.sh --assemble-only`). Then `tailfuse-notarize`, on Linux with rcodesign: embeds the app's and the tunnel's Developer ID provisioning profiles, signs the extension, app and CLI with the Developer ID, notarizes and staples them, publishes `…-macos-universal.zip` and the notarized updater bundle `…-macos-universal.app.tar.gz` with its `.sig`, writes `latest.json` from every platform's signature, and moves the Homebrew cask to the new version. |
 | tailfuse.com | Nothing to deploy: `/download` redirects to the latest release's files. |
+
+Not signed yet: the Windows installer has no Authenticode signature, so SmartScreen warns on first run (updates are still verified with the updater key). The phone apps have no release lane.
 
 The credentials stay out of this repository: the Apple key and certificate and the updater key live on the owner's laptop and in the cluster's secret store (infra: `bake-host/signing-secrets.json`).
 
