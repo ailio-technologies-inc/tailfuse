@@ -156,10 +156,9 @@ pub fn profiles(engine_state: &serde_json::Value) -> Vec<crate::ProfileView> {
         .flatten()
         .map(|p| {
             let s = |k: &str| p[k].as_str().unwrap_or("").to_string();
-            let mut error = s("error");
-            if error.is_empty() && p["needs_login"].as_bool() == Some(true) {
-                error = "Sign in to connect this tailnet".into();
-            }
+            // A tailnet waiting for a sign-in is not a problem: with no error, not online, not
+            // paused and not connecting, the window offers its Sign in button (main.js).
+            let error = s("error");
             crate::ProfileView {
                 name: s("name"),
                 suffixes: strs(&p["suffixes"]),
@@ -392,7 +391,10 @@ mod tests {
         let views = profiles(&state);
         assert_eq!(views[0].suffixes, vec![".ailio.dev"]);
         assert!(views[0].online && views[0].error.is_empty());
-        assert_eq!(views[1].error, "Sign in to connect this tailnet");
+        assert!(
+            views[1].error.is_empty() && !views[1].online && !views[1].connecting,
+            "signed out reads as waiting for a sign-in, not a problem"
+        );
     }
 
     #[test]
