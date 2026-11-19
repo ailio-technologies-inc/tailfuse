@@ -101,6 +101,25 @@ pub async fn start(
     Ok(())
 }
 
+/// At launch, with all-apps mode chosen: hand macOS this build's extension, so an app update also
+/// updates the tunnel. Before this, a new Tailfuse.app kept running the previous build's tunnel
+/// until all-apps mode was switched again. macOS replaces a running extension of the same team
+/// without asking, but the replacement ends its connection (seen 2026-11-18, 0.1.33 → 0.1.34), so a
+/// tunnel that was connected is started again; one that was off stays off (the power switch's).
+pub async fn refresh_extension(
+    device_name: String,
+    on_approval: impl Fn() + Send + 'static,
+) -> Result<(), String> {
+    let was_connected = status().await == "connected";
+    if blocking(move || tunnel::activate(on_approval)).await?? == "will_activate_after_reboot" {
+        return Err("macOS will finish updating Tailfuse's tunnel after a restart".into());
+    }
+    if was_connected && status().await != "connected" {
+        blocking(move || tunnel::start(&device_name)).await??;
+    }
+    Ok(())
+}
+
 pub async fn stop() -> Result<(), String> {
     blocking(tunnel::stop).await??;
     Ok(())
