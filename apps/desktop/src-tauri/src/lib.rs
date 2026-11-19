@@ -204,7 +204,7 @@ async fn get_state(app: AppHandle, state: State<'_, SharedState>) -> Result<Stat
             .unwrap_or_default(),
         version: app.package_info().version.to_string(),
         all_apps: AllAppsView {
-            available: cfg!(target_os = "macos"),
+            available: allapps::available(),
             on: allapps::is_on(&state.cfg_path),
             tunnel: if allapps::is_on(&state.cfg_path) {
                 allapps::status().await
@@ -394,6 +394,16 @@ async fn stop_inner(state: &AppState) {
     }
 }
 
+/// In all-apps mode, the tunnel's engine holds the tailnets: a change the window just saved to the
+/// app's config is sent to it too (allapps::mirror), so it takes effect now, not at the next switch.
+async fn sync_tunnel(state: &AppState, before: &Config, after: &Config) -> Result<(), String> {
+    if allapps::is_on(&state.cfg_path) {
+        allapps::mirror(before, after).await
+    } else {
+        Ok(())
+    }
+}
+
 /// macOS wants the person to allow Tailfuse's tunnel: open the pane where they do.
 fn open_extension_settings() {
     let _ = std::process::Command::new("open")
@@ -468,15 +478,21 @@ async fn stop(state: State<'_, SharedState>) -> Result<(), String> {
 }
 
 /// Rebuild the tray menu from the given state snapshot.
-fn rebuild_tray_menu(app: &AppHandle, state: &AppState, stats: &[daemon::ProfileStatus]) {
+fn rebuild_tray_menu(
+    app: &AppHandle,
+    state: &AppState,
+    stats: &[daemon::ProfileStatus],
+    tunnel_up: bool,
+) {
     let Ok(cfg) = config::load(&state.cfg_path) else {
         return;
     };
-    let is_up = state
-        .running
-        .try_lock()
-        .map(|g| g.is_some())
-        .unwrap_or(true);
+    let is_up = tunnel_up
+        || state
+            .running
+            .try_lock()
+            .map(|g| g.is_some())
+            .unwrap_or(true);
     let any_online = stats.iter().any(|s| s.online);
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
 
@@ -579,11 +595,18 @@ fn refresh_tray(app: &AppHandle) {
     let state = Arc::clone(&state);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        // All-apps mode: the tunnel's engine holds the tailnets (allapps.rs).
+        if allapps::is_on(&state.cfg_path) {
+            let engine = allapps::call("state", serde_json::Value::Null).await.ok();
+            let stats = engine.as_ref().map(allapps::statuses).unwrap_or_default();
+            rebuild_tray_menu(&app, &state, &stats, engine.is_some());
+            return;
+        }
         let stats = match state.running.lock().await.as_ref() {
             Some(r) => r.daemons.status().await,
             None => vec![],
         };
-        rebuild_tray_menu(&app, &state, &stats);
+        rebuild_tray_menu(&app, &state, &stats, false);
     });
 }
 
@@ -692,6 +715,14 @@ async fn sign_in_new_tailnet(
     {
         let cfg = state.cfg.lock().await;
         license::check(cfg.profiles.len() + 1, &cfg.license).map_err(|e| e.to_string())?;
+    }
+    if allapps::is_on(&state.cfg_path) {
+        // The tunnel's engine makes the tailnet and starts its sign-in; the page opens here.
+        let name = allapps::add_profile().await?;
+        if let Some(url) = allapps::login_url(&name).await? {
+            let _ = app.opener().open_url(url, None::<&str>);
+        }
+        return Ok(name);
     }
     let pending = daemon::new_tailnet_start()
         .await
@@ -1087,6 +1118,7 @@ async fn import_from_tailscale(state: State<'_, SharedState>) -> Result<String, 
             .to_string()
     })?;
     let mut cfg = state.cfg.lock().await;
+    let mirror_from = cfg.clone();
     // Reuse an existing profile that already owns this suffix.
     if let Some((name, _)) = cfg.owner(&suffix) {
         return Ok(format!("already imported as profile {name:?}"));
@@ -1107,6 +1139,7 @@ async fn import_from_tailscale(state: State<'_, SharedState>) -> Result<String, 
     cfg.validate().map_err(|e| e.to_string())?;
     license::check(cfg.profiles.len(), &cfg.license).map_err(|e| e.to_string())?;
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+    sync_tunnel(&state, &mirror_from, &cfg).await?;
     Ok(format!(
         "imported tailnet {suffix} as {name:?}. Press Sign in to connect it"
     ))
@@ -1119,6 +1152,7 @@ async fn add_profile(
     suffixes: Vec<String>,
 ) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
+    let mirror_from = cfg.clone();
     if cfg.profiles.contains_key(&name) {
         return Err(format!("a tailnet called {name:?} already exists"));
     }
@@ -1132,6 +1166,7 @@ async fn add_profile(
     cfg.validate().map_err(|e| e.to_string())?;
     license::check(cfg.profiles.len(), &cfg.license).map_err(|e| e.to_string())?;
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+    sync_tunnel(&state, &mirror_from, &cfg).await?;
     Ok(())
 }
 
@@ -1180,6 +1215,7 @@ async fn set_profile_options(
 ) -> Result<(), String> {
     let prof = {
         let mut cfg = state.cfg.lock().await;
+        let mirror_from = cfg.clone();
         let p = cfg
             .profiles
             .get_mut(&name)
@@ -1196,8 +1232,12 @@ async fn set_profile_options(
         let p = p.clone();
         cfg.validate().map_err(|e| e.to_string())?;
         cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+        sync_tunnel(&state, &mirror_from, &cfg).await?;
         p
     };
+    if allapps::is_on(&state.cfg_path) {
+        return Ok(()); // sent to the tunnel above; the app's own nodes are off
+    }
     daemon::apply_prefs(&name, &prof)
         .await
         .map_err(|e| e.to_string())
@@ -1311,10 +1351,12 @@ async fn tailscale_cert(app: AppHandle, name: String) -> Result<String, String> 
 #[tauri::command]
 async fn remove_profile(state: State<'_, SharedState>, name: String) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
+    let mirror_from = cfg.clone();
     if cfg.profiles.remove(&name).is_none() {
         return Err(format!("there is no tailnet called {name:?}"));
     }
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+    sync_tunnel(&state, &mirror_from, &cfg).await?;
     Ok(())
 }
 
@@ -1327,6 +1369,7 @@ async fn add_tunnel(
     profile: String,
 ) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
+    let mirror_from = cfg.clone();
     cfg.tunnels.push(Tunnel {
         name,
         listen,
@@ -1335,18 +1378,21 @@ async fn add_tunnel(
     });
     cfg.validate().map_err(|e| e.to_string())?;
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+    sync_tunnel(&state, &mirror_from, &cfg).await?;
     Ok(())
 }
 
 #[tauri::command]
 async fn remove_tunnel(state: State<'_, SharedState>, name: String) -> Result<(), String> {
     let mut cfg = state.cfg.lock().await;
+    let mirror_from = cfg.clone();
     let before = cfg.tunnels.len();
     cfg.tunnels.retain(|t| t.name != name);
     if cfg.tunnels.len() == before {
         return Err(format!("there is no local port called {name:?}"));
     }
     cfg.save(&state.cfg_path).map_err(|e| e.to_string())?;
+    sync_tunnel(&state, &mirror_from, &cfg).await?;
     Ok(())
 }
 

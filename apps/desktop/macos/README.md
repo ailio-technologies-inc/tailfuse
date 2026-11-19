@@ -46,14 +46,22 @@ Items & Extensions) and to allow a VPN configuration.
 The App Store Connect key on the owner's laptop can read the account but not change it (403), so
 these are made by hand at developer.apple.com, or with a key that has the Admin role.
 
+## The window in all-apps mode
+
+The window, the tray and the menu-bar icon read the tunnel's engine. Signing in, switching a
+tailnet on or off and signing in to a new tailnet go to it directly; adding or removing a tailnet,
+a domain or a local port, and a tailnet's exit node or subnet routes, are saved to the app's
+config as before and sent to the tunnel at once (`allapps::plan`, one request per difference), so
+switching all-apps mode off later finds the same setup.
+
 ## Open work
 
-- **Release lanes.** `release.yml` builds the app on GitHub, and the cluster's `tailfuse-notarize`
-  signs it on Linux with rcodesign. Both need the tunnel: the GitHub build runs `build-tunnel.sh`
-  up to the bundle (no signing), and rcodesign signs the extension with
-  `TailfuseTunnel/TailfuseTunnel.entitlements` and the app with `Tailfuse.entitlements`, with the
-  two profiles from the cluster's secret store (infra `bake-host/signing-secrets.json`).
-- **The window in all-apps mode** shows the tunnel's tailnets, signs in and switches them on and
-  off through the engine. Adding a tailnet, domains, local ports, exit nodes and Taildrop still go
-  to the app's own config and take effect in all-apps mode only after switching it off and on.
+- **Release lanes.** A release builds the app without the tunnel until the profiles exist, and
+  the switch hides itself in a build without it (`allapps::available`). Once they do:
+  `release.yml`'s macOS job runs `build-engine.sh macos` and `build-tunnel.sh` up to the bundle
+  (no signing), and the cluster's `tailfuse-notarize` (rcodesign, on Linux) signs the extension
+  with `TailfuseTunnel/TailfuseTunnel.entitlements` and the app with `Tailfuse.entitlements`, with
+  the two profiles from the cluster's secret store (infra `bake-host/signing-secrets.json`).
+- A tailnet first signed in from the tunnel exists only in the tunnel's engine; switching all-apps
+  mode off does not bring it to the app's own nodes.
 - Windows and Linux: not started (a WinTun / TUN equivalent of the same engine).
