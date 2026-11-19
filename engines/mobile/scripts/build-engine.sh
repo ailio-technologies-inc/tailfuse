@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Build the Tailfuse mobile engine bindings with gomobile.
 #
-#   engines/mobile/scripts/build-engine.sh ios|android|all
+#   engines/mobile/scripts/build-engine.sh ios|android|macos|all
 #
 # ios:     apps/mobile/modules/tailfuse-engine/ios/Frameworks/Tfmobile.xcframework
 #          (device arm64 + simulator arm64/x86_64, minimum iOS 16)
+# macos:   apps/desktop/macos/Frameworks/Tfmobile.xcframework
+#          (arm64 + x86_64, minimum macOS 13): the engine inside the desktop app's
+#          packet-tunnel system extension (all-apps mode on the Mac)
 # android: apps/mobile/modules/tailfuse-engine/android/libs/tfmobile.aar
 #          (minimum API 26; needs ANDROID_NDK_HOME, and ANDROID_HOME for the SDK)
 #          TF_ANDROID_ABIS limits the ABIs, e.g. TF_ANDROID_ABIS=arm64 (default: all four)
@@ -14,9 +17,9 @@ set -euo pipefail
 
 target="${1:-}"
 case "$target" in
-ios | android | all) ;;
+ios | android | macos | all) ;;
 *)
-	echo "usage: $0 ios|android|all" >&2
+	echo "usage: $0 ios|android|macos|all" >&2
 	exit 2
 	;;
 esac
@@ -82,6 +85,19 @@ build_ios() {
 	du -sh "$out"/* 2>/dev/null || true
 }
 
+build_macos() {
+	if [ "$(uname -s)" != Darwin ]; then
+		echo "the macOS framework can only be built on macOS (Xcode)" >&2
+		exit 1
+	fi
+	local out="$engine/../../apps/desktop/macos/Frameworks/Tfmobile.xcframework"
+	mkdir -p "$(dirname "$out")"
+	rm -rf "$out"
+	echo "building $out"
+	(cd "$engine" && gomobile bind -target macos -macosversion 13.0 "${common[@]}" -o "$out" ./tfmobile)
+	du -sh "$out"/* 2>/dev/null || true
+}
+
 build_android() {
 	if [ -z "${ANDROID_NDK_HOME:-}" ]; then
 		echo "ANDROID_NDK_HOME is not set: install the Android NDK (Android Studio > SDK Manager > NDK) and set ANDROID_NDK_HOME to it, e.g. \$ANDROID_HOME/ndk/<version>" >&2
@@ -106,8 +122,10 @@ build_android() {
 case "$target" in
 ios) build_ios ;;
 android) build_android ;;
+macos) build_macos ;;
 all)
 	build_ios
+	build_macos
 	build_android
 	;;
 esac

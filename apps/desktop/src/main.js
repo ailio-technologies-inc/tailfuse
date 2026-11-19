@@ -275,7 +275,24 @@ async function runTailscale() {
 
 let licenseFormOpen = false;
 
+/** Settings > Every app: all-apps mode on the Mac (src-tauri/src/allapps.rs). */
+function renderAllApps(a) {
+  if (!a) return;
+  $("#all-apps-row").hidden = !a.available;
+  if (allAppsBusy) return;
+  $("#all-apps").checked = a.on;
+  const text = $("#all-apps-text");
+  if (a.on && a.tunnel !== "connected" && a.tunnel !== "none") {
+    text.textContent = `Every app reaches your tailnets. The tunnel is ${a.tunnel}.`;
+  } else if (a.on) {
+    text.textContent = "Every app on this Mac reaches your tailnets: ssh, database tools, the terminal and browsers.";
+  }
+}
+
+let allAppsBusy = false;
+
 function render(s) {
+  renderAllApps(s.all_apps);
   lastState = s;
   if (s.version) $("#version").textContent = s.version;
   $("#power").checked = s.up;
@@ -644,6 +661,24 @@ if (!invoke) {
     if (e.key === "Enter") {
       e.preventDefault();
       runTailscale();
+    }
+  });
+
+  $("#all-apps").addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    allAppsBusy = true;
+    e.target.disabled = true;
+    $("#all-apps-text").textContent = on
+      ? "Starting Tailfuse's tunnel. If macOS asks, allow it in System Settings, then sign in to each tailnet in your browser."
+      : "Handing your tailnets back to Tailfuse's own connections…";
+    try {
+      await call("set_all_apps", { on });
+    } catch {
+      e.target.checked = !on;
+    } finally {
+      allAppsBusy = false;
+      e.target.disabled = false;
+      refresh();
     }
   });
 
