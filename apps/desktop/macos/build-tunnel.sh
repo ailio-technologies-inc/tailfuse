@@ -4,13 +4,17 @@
 #
 #   apps/desktop/macos/build-tunnel.sh path/to/Tailfuse.app [--notarize | --assemble-only]
 #
-# --assemble-only builds the extension into the bundle and stops: no profiles, no signing. The
-# release build on the Mac mini (infra host/tailfuse-release-macos) runs it, and the cluster's
-# notarize step (rcodesign, on Linux) adds the profiles and signs with the entitlements here.
+# --assemble-only builds the extension into the bundle and stops: no profiles, no signing, and the
+# team ID left as __TEAM_ID__. The release build on the Mac mini (infra host/tailfuse-release-macos)
+# runs it, and the cluster's notarize step (rcodesign, on Linux) fills in the team ID, adds the
+# profiles and signs with the entitlements here.
 #
 # Needs: Xcode's command line tools; the engine framework (engines/mobile/scripts/build-engine.sh
-# macos, run here when missing); the Developer ID Application identity in the keychain; and two
-# Developer ID provisioning profiles, kept out of the repo:
+# macos, run here when missing); and, to sign, your Apple account's details, kept out of the repo:
+#   APPLE_SIGNING_IDENTITY  the Developer ID Application identity in the keychain,
+#                           e.g. "Developer ID Application: Your Name (TEAMID1234)"
+#   APPLE_TEAM_ID      the 10-character team ID, filled in for __TEAM_ID__ in the entitlements
+#                      and the extension's Info.plist
 #   TF_APP_PROFILE     com.ailio.tailfuse          (Network Extensions + System Extension)
 #   TF_TUNNEL_PROFILE  com.ailio.tailfuse.tunnel   (Network Extensions)
 # --notarize submits the signed app with the App Store Connect key in ~/.appstoreconnect, as
@@ -23,8 +27,9 @@ notarize=""
 [ "$mode" = "--notarize" ] && notarize="--notarize"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
-identity="${TF_SIGN_IDENTITY:-Developer ID Application: Luigi Poole (N7TM93NL4Q)}"
 if [ "$mode" != "--assemble-only" ]; then
+	: "${APPLE_SIGNING_IDENTITY:?set APPLE_SIGNING_IDENTITY to your Developer ID Application identity}"
+	: "${APPLE_TEAM_ID:?set APPLE_TEAM_ID to your 10-character Apple team ID}"
 	: "${TF_APP_PROFILE:?set TF_APP_PROFILE to the com.ailio.tailfuse Developer ID profile}"
 	: "${TF_TUNNEL_PROFILE:?set TF_TUNNEL_PROFILE to the com.ailio.tailfuse.tunnel Developer ID profile}"
 fi
@@ -50,20 +55,24 @@ mkdir -p "$ext/Contents/MacOS"
 lipo -create -output "$ext/Contents/MacOS/com.ailio.tailfuse.tunnel" "$work/tunnel-arm64" "$work/tunnel-x86_64"
 sed "s/__VERSION__/$version/g" "$here/TailfuseTunnel/Info.plist" >"$ext/Contents/Info.plist"
 if [ "$mode" = "--assemble-only" ]; then
-	echo "assembled the tunnel into $app ($version); not signed"
+	echo "assembled the tunnel into $app ($version); not signed, team ID left as __TEAM_ID__"
 	exit 0
 fi
+identity="$APPLE_SIGNING_IDENTITY"
+sed -i '' "s/__TEAM_ID__/$APPLE_TEAM_ID/g" "$ext/Contents/Info.plist"
+sed "s/__TEAM_ID__/$APPLE_TEAM_ID/g" "$here/TailfuseTunnel/TailfuseTunnel.entitlements" >"$work/tunnel.entitlements"
+sed "s/__TEAM_ID__/$APPLE_TEAM_ID/g" "$here/Tailfuse.entitlements" >"$work/app.entitlements"
 cp "$TF_TUNNEL_PROFILE" "$ext/Contents/embedded.provisionprofile"
 cp "$TF_APP_PROFILE" "$app/Contents/embedded.provisionprofile"
 
 # Inside out: the extension, the sidecars, then the app (which seals everything in it).
 codesign --force --timestamp --options runtime --sign "$identity" \
-	--entitlements "$here/TailfuseTunnel/TailfuseTunnel.entitlements" "$ext"
+	--entitlements "$work/tunnel.entitlements" "$ext"
 for bin in "$app"/Contents/MacOS/*; do
 	[ "$(basename "$bin")" = "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")" ] && continue
 	codesign --force --timestamp --options runtime --sign "$identity" "$bin"
 done
-codesign --force --timestamp --options runtime --sign "$identity" --entitlements "$here/Tailfuse.entitlements" "$app"
+codesign --force --timestamp --options runtime --sign "$identity" --entitlements "$work/app.entitlements" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 
 if [ "$notarize" = "--notarize" ]; then

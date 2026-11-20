@@ -27,11 +27,18 @@ its own device on each tailnet, so each one signs in once more, in the browser.
 
 ```sh
 engines/mobile/scripts/build-engine.sh macos      # the engine framework (git-ignored)
-cd apps/desktop && npm run tauri build -- --bundles app
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID1234)"
+export APPLE_TEAM_ID=TEAMID1234
+cd apps/desktop && npm run tauri build -- --bundles app   # Tauri signs with APPLE_SIGNING_IDENTITY
 TF_APP_PROFILE=~/…/Tailfuse_Developer_ID.provisionprofile \
 TF_TUNNEL_PROFILE=~/…/Tailfuse_Tunnel_Developer_ID.provisionprofile \
   macos/build-tunnel.sh src-tauri/target/release/bundle/macos/Tailfuse.app --notarize
 ```
+
+The repo carries no Apple account details. The entitlements and the extension's `Info.plist` say
+`__TEAM_ID__`, and `build-tunnel.sh` fills in `APPLE_TEAM_ID` when it signs. With `--assemble-only`
+it leaves the placeholder for the release's notarize step, which reads the team ID from the
+app's provisioning profile.
 
 macOS loads the extension only when Tailfuse.app is in `/Applications`, signed with the profiles,
 and notarized. The first time, it asks the person to allow the extension (System Settings > Login
@@ -50,7 +57,8 @@ these are made by hand at developer.apple.com, or with a key that has the Admin 
 
 Releases ship the tunnel. The release build on the Mac mini (infra `tailfuse-release-macos`) runs
 `build-engine.sh macos` and `build-tunnel.sh --assemble-only`, which puts the extension in the
-bundle unsigned. The cluster's `tailfuse-notarize` (rcodesign, on Linux) then embeds the two
+bundle unsigned. The cluster's `tailfuse-notarize` (rcodesign, on Linux) then fills in
+`__TEAM_ID__` from the app's provisioning profile, embeds the two
 Developer ID profiles from its secret store (infra `bake-host/signing-secrets.json`), signs the
 extension with `TailfuseTunnel/TailfuseTunnel.entitlements` and the app with
 `Tailfuse.entitlements`, and notarizes and staples. Both profiles expire in 2044. A build

@@ -7,7 +7,7 @@
 #   scripts/notarize-macos.sh <dmg>      # a specific dmg
 set -euo pipefail
 
-IDENTITY="Developer ID Application: Luigi Poole (N7TM93NL4Q)"
+IDENTITY="${APPLE_SIGNING_IDENTITY:?set APPLE_SIGNING_IDENTITY, e.g. \"Developer ID Application: Your Name (TEAMID1234)\"}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DMG="${1:-$(ls "$ROOT"/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)}"
 [ -f "$DMG" ] || { echo "no dmg found (build first, or pass its path)" >&2; exit 1; }

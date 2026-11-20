@@ -64,7 +64,6 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "Developer ID Application: Luigi Poole (N7TM93NL4Q)",
       "hardenedRuntime": true
     },
     "createUpdaterArtifacts": true

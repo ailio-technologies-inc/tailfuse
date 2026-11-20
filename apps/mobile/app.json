@@ -12,7 +12,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ailio.tailfuse",
       "buildNumber": "2",
-      "appleTeamId": "N7TM93NL4Q",
       "entitlements": {
         "com.apple.developer.networking.networkextension": [
           "packet-tunnel-provider"

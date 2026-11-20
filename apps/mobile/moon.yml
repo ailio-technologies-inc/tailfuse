@@ -17,6 +17,7 @@ fileGroups:
     - '*.tsx'
     - '*.js'
     - 'app.json'
+    - 'app.config.ts'
     - 'tsconfig.json'
     - 'package.json'
     - 'package-lock.json'

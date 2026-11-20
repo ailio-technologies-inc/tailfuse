@@ -36,7 +36,7 @@ Then:
 
 ```sh
 ../../engines/mobile/scripts/build-engine.sh ios   # the Go framework (gitignored)
-# add "appleTeamId": "<your 10-character team id>" under expo.ios in app.json (signs both targets)
+export APPLE_TEAM_ID=<your 10-character team id>  # or put it in .env.local; app.config.ts signs both targets with it
 npx expo prebuild --platform ios --clean
 npx expo run:ios --device --configuration Release  # a phone on USB, Xcode signing
 # or in the cloud: npx eas-cli@latest build --platform ios (EAS makes profiles for both bundle ids)

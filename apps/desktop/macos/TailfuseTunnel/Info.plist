@@ -16,7 +16,7 @@
 	<key>NSSystemExtensionUsageDescription</key><string>Tailfuse's tunnel lets every app on this Mac reach your tailnets by name and address.</string>
 	<key>NetworkExtension</key>
 	<dict>
-		<key>NEMachServiceName</key><string>N7TM93NL4Q.com.ailio.tailfuse.tunnel</string>
+		<key>NEMachServiceName</key><string>__TEAM_ID__.com.ailio.tailfuse.tunnel</string>
 		<key>NEProviderClasses</key>
 		<dict>
 			<key>com.apple.networkextension.packet-tunnel</key><string>TailfuseTunnel.PacketTunnelProvider</string>
