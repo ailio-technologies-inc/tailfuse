@@ -42,6 +42,17 @@ npx expo run:ios --device --configuration Release  # a phone on USB, Xcode signi
 # or in the cloud: npx eas-cli@latest build --platform ios (EAS makes profiles for both bundle ids)
 ```
 
+For TestFlight, bump `expo.ios.buildNumber` in `app.json` (App Store Connect refuses a number it
+has seen), archive in Xcode or with `xcodebuild archive`, then export and upload:
+
+```sh
+xcodebuild -exportArchive -archivePath build/Tailfuse.xcarchive \
+  -exportOptionsPlist scripts/ExportOptions.plist -exportPath build/export
+```
+
+`app.json` does not set `ITSAppUsesNonExemptEncryption`: the tunnel uses WireGuard's encryption,
+so App Store Connect asks the export-compliance question for each build.
+
 `modules/tailfuse-engine/ios/README.md` explains how the pieces fit and what to check on the phone.
 
 ## Android build
