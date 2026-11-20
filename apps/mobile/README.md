@@ -43,7 +43,8 @@ npx expo run:ios --device --configuration Release  # a phone on USB, Xcode signi
 ```
 
 For TestFlight, bump `expo.ios.buildNumber` in `app.json` (App Store Connect refuses a number it
-has seen), archive in Xcode or with `xcodebuild archive`, then export and upload:
+has seen), archive in Xcode or with `xcodebuild archive`, then export the `.ipa` and upload it with
+Transporter or `xcrun altool --upload-app`:
 
 ```sh
 xcodebuild -exportArchive -archivePath build/Tailfuse.xcarchive \
