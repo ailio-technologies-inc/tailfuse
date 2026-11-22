@@ -88,26 +88,32 @@ pub fn is_code(input: &str) -> bool {
 /// verified offline like any other before it is used.
 pub fn redeem(code: &str) -> Result<String> {
     let body = serde_json::json!({ "code": code.trim() });
-    let resp = ureq::post(REDEEM_URL)
-        .timeout(std::time::Duration::from_secs(20))
-        .set(
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(20)))
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let resp = agent
+        .post(REDEEM_URL)
+        .header(
             "user-agent",
             concat!("tailfuse/", env!("CARGO_PKG_VERSION")),
         )
         .send_json(body);
-    let value: serde_json::Value = match resp {
-        Ok(r) => r
-            .into_json()
-            .context("reading the license server's reply")?,
-        Err(ureq::Error::Status(_, r)) => {
-            let v: serde_json::Value = r.into_json().unwrap_or_default();
-            bail!(
-                "{}",
-                v["error"].as_str().unwrap_or("that code was not accepted")
-            );
-        }
+    let mut resp = match resp {
+        Ok(r) => r,
         Err(e) => bail!("could not reach tailfuse.com to check the code: {e}"),
     };
+    let status = resp.status();
+    let value = resp.body_mut().read_json::<serde_json::Value>();
+    if !status.is_success() {
+        let v = value.unwrap_or_default();
+        bail!(
+            "{}",
+            v["error"].as_str().unwrap_or("that code was not accepted")
+        );
+    }
+    let value = value.context("reading the license server's reply")?;
     let key = value["key"]
         .as_str()
         .context("the license server sent no key")?

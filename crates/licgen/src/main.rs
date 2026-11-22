@@ -9,7 +9,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use clap::Parser;
 use ed25519_dalek::{Signer, SigningKey};
-use rand::rngs::OsRng;
+use rand::{SeedableRng, rngs::{StdRng, SysRng}};
 use tailfuse_core::license::License;
 
 #[derive(Parser)]
@@ -35,7 +35,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.gen_keys {
-        let sk = SigningKey::generate(&mut OsRng);
+        let mut rng = StdRng::try_from_rng(&mut SysRng).context("system random source failed")?;
+        let sk = SigningKey::generate(&mut rng);
         println!(
             "public : {}",
             URL_SAFE_NO_PAD.encode(sk.verifying_key().to_bytes())
