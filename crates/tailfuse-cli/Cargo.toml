@@ -18,4 +18,4 @@ serde-saphyr = "2"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 serde_json = "1"
-ureq = { version = "2", features = ["json", "socks-proxy"] }
+ureq = { version = "3", features = ["json", "socks-proxy"] }

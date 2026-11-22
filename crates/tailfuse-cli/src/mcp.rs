@@ -388,6 +388,17 @@ fn socks_connect(router: SocketAddr, host: &str, port: u16) -> Result<TcpStream>
     Ok(s)
 }
 
+fn with_headers<B>(mut req: ureq::RequestBuilder<B>, headers: Option<&serde_json::Map<String, Value>>) -> ureq::RequestBuilder<B> {
+    if let Some(headers) = headers {
+        for (k, v) in headers {
+            if let Some(v) = v.as_str() {
+                req = req.header(k, v);
+            }
+        }
+    }
+    req
+}
+
 fn http(cfg: &Config, args: &Value) -> Result<Value> {
     let url = args["url"].as_str().context("url is required")?;
     if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -403,36 +414,43 @@ fn http(cfg: &Config, args: &Value) -> Result<Value> {
         .as_f64()
         .unwrap_or(20.0)
         .clamp(1.0, 120.0);
-    let agent = ureq::AgentBuilder::new()
-        .proxy(ureq::Proxy::new(format!("socks5://{}", cfg.router.listen))?)
-        .timeout(Duration::from_secs_f64(timeout))
-        .redirects(5)
-        .build();
-    let mut req = agent.request(&method, url);
-    if let Some(h) = args["headers"].as_object() {
-        for (k, v) in h {
-            if let Some(v) = v.as_str() {
-                req = req.set(k, v);
-            }
-        }
-    }
+    let proxy = format!("socks5://{}", cfg.router.listen);
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .proxy(Some(ureq::Proxy::new(&proxy)?))
+        .timeout_global(Some(Duration::from_secs_f64(timeout)))
+        .max_redirects(5)
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let headers = args["headers"].as_object();
+    let body = args["body"].as_str();
     let started = std::time::Instant::now();
-    let res = match args["body"].as_str() {
-        Some(b) if matches!(method.as_str(), "POST" | "PUT" | "PATCH") => req.send_string(b),
-        _ => req.call(),
+    let res = match method.as_str() {
+        "GET" => with_headers(agent.get(url), headers).call(),
+        "HEAD" => with_headers(agent.head(url), headers).call(),
+        "DELETE" => with_headers(agent.delete(url), headers).call(),
+        "POST" => with_headers(agent.post(url), headers).send(body.unwrap_or("")),
+        "PUT" => with_headers(agent.put(url), headers).send(body.unwrap_or("")),
+        "PATCH" => with_headers(agent.patch(url), headers).send(body.unwrap_or("")),
+        _ => unreachable!("method checked above"),
     };
-    let resp = match res {
-        Ok(r) | Err(ureq::Error::Status(_, r)) => r,
+    let mut resp = match res {
+        Ok(r) => r,
         Err(e) => bail!("request failed: {e}"),
     };
-    let status = resp.status();
+    let status = resp.status().as_u16();
     let headers: serde_json::Map<String, Value> = resp
-        .headers_names()
-        .into_iter()
-        .filter_map(|n| resp.header(&n).map(|v| (n, Value::String(v.to_string()))))
+        .headers()
+        .iter()
+        .filter_map(|(n, v)| {
+            v.to_str()
+                .ok()
+                .map(|v| (n.to_string(), Value::String(v.to_string())))
+        })
         .collect();
     let mut buf = Vec::new();
-    resp.into_reader()
+    resp.body_mut()
+        .as_reader()
         .take(MAX_BODY as u64 + 1)
         .read_to_end(&mut buf)?;
     let truncated = buf.len() > MAX_BODY;

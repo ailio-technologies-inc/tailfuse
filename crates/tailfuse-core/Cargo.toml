@@ -9,21 +9,21 @@ license.workspace = true
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "2"
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "3", features = ["json"] }
 serde_json = "1"
 anyhow = "1"
-ed25519-dalek = "2"
-base64 = "0.22"
-qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+ed25519-dalek = "3"
+base64 = "0.23"
+qrcode = { version = "0.15", default-features = false, features = ["svg"] }
 tracing = "0.1"
-dirs = "6"
-rand = "0.8"
+dirs = "7"
+rand = "0.10"
 
 # Secrets (auth keys, the license key) live in the OS credential store where there is one.
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
+keyring = "4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-keyring = { version = "3", features = ["windows-native"] }
+keyring = "4"
 # A job object that ends the tailscaled daemons with Tailfuse (daemon.rs, kill_with_tailfuse).
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
