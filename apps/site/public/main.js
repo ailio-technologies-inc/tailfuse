@@ -348,9 +348,13 @@
   menu.addEventListener('keydown', function (e) {
     var list = items();
     var i = list.indexOf(document.activeElement);
-    if (e.key === 'Escape') { e.preventDefault(); close(true); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+  });
+  // Escape closes the open menu wherever focus is (in the menu, on the toggle after a click, or nowhere, as Safari
+  // leaves it after a click) and returns focus to the toggle.
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !menu.hidden) { e.preventDefault(); close(true); }
   });
   document.addEventListener('click', function (e) {
     if (!menu.hidden && !e.target.closest('#setup-split')) close(false);
