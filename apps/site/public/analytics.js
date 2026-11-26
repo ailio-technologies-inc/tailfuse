@@ -71,9 +71,25 @@
     ]);
     bar.addEventListener('click', function (event) {
       var choice = event.target.getAttribute && event.target.getAttribute('data-choice');
-      if (choice) answer(choice).catch(function () { bar.remove(); });
+      if (choice) answer(choice).catch(function () { bar.remove(); release(); });
     });
     document.body.appendChild(bar);
+
+    // The bar is fixed over the bottom of the page. While it is up, the page is padded by the space it covers
+    // (its height and the gap below it, plus a gap above), so the footer's links can still be scrolled clear of it.
+    function reserve() {
+      var covered = window.innerHeight - bar.getBoundingClientRect().top;
+      document.body.style.setProperty('padding-bottom', Math.max(0, Math.ceil(covered) + 16) + 'px');
+    }
+    function release() {
+      window.removeEventListener('resize', reserve);
+      if (observer) observer.disconnect();
+      document.body.style.removeProperty('padding-bottom');
+    }
+    var observer = window.ResizeObserver ? new ResizeObserver(reserve) : null;
+    if (observer) observer.observe(bar);
+    window.addEventListener('resize', reserve);
+    reserve();
   }
 
   fetch('/data/consent', { credentials: 'same-origin' })
