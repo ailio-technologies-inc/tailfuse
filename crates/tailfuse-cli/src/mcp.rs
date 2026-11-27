@@ -388,7 +388,10 @@ fn socks_connect(router: SocketAddr, host: &str, port: u16) -> Result<TcpStream>
     Ok(s)
 }
 
-fn with_headers<B>(mut req: ureq::RequestBuilder<B>, headers: Option<&serde_json::Map<String, Value>>) -> ureq::RequestBuilder<B> {
+fn with_headers<B>(
+    mut req: ureq::RequestBuilder<B>,
+    headers: Option<&serde_json::Map<String, Value>>,
+) -> ureq::RequestBuilder<B> {
     if let Some(headers) = headers {
         for (k, v) in headers {
             if let Some(v) = v.as_str() {
