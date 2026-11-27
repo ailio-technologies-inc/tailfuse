@@ -9,7 +9,10 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use clap::Parser;
 use ed25519_dalek::{Signer, SigningKey};
-use rand::{SeedableRng, rngs::{StdRng, SysRng}};
+use rand::{
+    rngs::{StdRng, SysRng},
+    SeedableRng,
+};
 use tailfuse_core::license::License;
 
 #[derive(Parser)]
