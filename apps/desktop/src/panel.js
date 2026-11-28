@@ -98,19 +98,34 @@ function escapeHtml(s) {
   }[c]));
 }
 
+/** Says why the last start or stop failed, in the panel itself (a notification may be switched off). */
+function showProblem(text) {
+  const el = $("#problem");
+  el.textContent = text || "";
+  el.hidden = !text;
+}
+
 $("#power").addEventListener("change", async (e) => {
   if (!invoke) return;
+  const starting = e.target.checked;
   e.target.disabled = true;
   powerBusy = true;
+  showProblem("");
   const state = $("#state");
-  state.textContent = e.target.checked ? "Starting…" : "Stopping…";
-  state.className = "pill wait";
+  state.textContent = starting ? "Starting…" : "Stopping…";
+  state.className = "pill wait busy";
+  $(".p-head .switch").classList.add("busy");
+  // Show the tailnets coming up at once, before the first refresh answers.
+  refresh();
   try {
-    await invoke(e.target.checked ? "start" : "stop");
+    await invoke(starting ? "start" : "stop");
   } catch (err) {
-    invoke("notify_user", { title: "Tailfuse could not turn on", body: String(err) }).catch(() => {});
+    const title = starting ? "Tailfuse could not turn on" : "Tailfuse could not turn off";
+    showProblem(`${title}: ${String(err)}`);
+    invoke("notify_user", { title, body: String(err) }).catch(() => {});
   } finally {
     powerBusy = false;
+    $(".p-head .switch").classList.remove("busy");
   }
   e.target.disabled = false;
   refresh();
