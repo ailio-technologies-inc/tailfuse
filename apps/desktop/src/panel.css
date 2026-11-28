@@ -173,3 +173,10 @@ body {
 .menu-item:hover, .menu-item:focus-visible { background: color-mix(in oklab, var(--p-ink) 8%, transparent); outline: none; }
 .menu-item kbd { font: 400 11.5px/1 var(--font-text); color: var(--muted); background: none; border: 0; }
 .p-foot #open, .p-foot #quit { flex: none; padding: 0 10px; height: 30px; }
+
+/* Starting or stopping: the state line and the power switch breathe until the command answers
+   (main window: .power-label.busy in styles.css). */
+.pill.busy, .switch.busy .slider { animation: connecting-breathe 1.6s ease-in-out infinite; }
+/* Why the last start or stop failed, shown here because a notification may be switched off. */
+.problem { margin: 0; padding: 8px 14px; font-size: 12px; line-height: 1.4; color: var(--accent, #ff4a1f); border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .pill.busy, .switch.busy .slider { animation: none; } }

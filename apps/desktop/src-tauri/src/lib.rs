@@ -221,14 +221,15 @@ async fn get_state(app: AppHandle, state: State<'_, SharedState>) -> Result<Stat
 
 /// Start profiles + router + PAC. Shared by the Start command and tray toggle.
 async fn start_inner(state: &AppState) -> Result<(), String> {
-    if allapps::is_on(&state.cfg_path) {
-        // The tunnel holds the tailnets; the app's own nodes, router and PAC stay off.
-        return allapps::start(sync::computer_name(), open_extension_settings).await;
-    }
-    // The menu-bar icon animates while Tailfuse starts (spawn_tray_animation).
+    // The menu-bar icon animates while Tailfuse starts (spawn_tray_animation), in either mode.
     STARTING.store(true, std::sync::atomic::Ordering::Relaxed);
     watch_connecting();
-    let res = start_inner_locked(state).await;
+    let res = if allapps::is_on(&state.cfg_path) {
+        // The tunnel holds the tailnets; the app's own nodes, router and PAC stay off.
+        allapps::start(sync::computer_name(), open_extension_settings).await
+    } else {
+        start_inner_locked(state).await
+    };
     STARTING.store(false, std::sync::atomic::Ordering::Relaxed);
     res
 }
@@ -300,17 +301,38 @@ fn spawn_tray_animation(app: AppHandle) {
                 connecting = true;
             } else if polled.elapsed() >= Duration::from_secs(1) {
                 polled = Instant::now();
+                let tunnel_on = app
+                    .try_state::<SharedState>()
+                    .is_some_and(|state| allapps::is_on(&state.cfg_path));
+                // All-apps mode: the tunnel's engine says which tailnets are on their way up.
+                let engine = if tunnel_on {
+                    Some(
+                        allapps::call("state", serde_json::Value::Null)
+                            .await
+                            .map(|e| {
+                                allapps::profiles(&e)
+                                    .iter()
+                                    .any(|p| p.connecting && !p.online)
+                            })
+                            .unwrap_or(false),
+                    )
+                } else {
+                    None
+                };
                 let daemons =
                     app.try_state::<SharedState>()
                         .map(|state| match state.running.try_lock() {
                             Ok(g) => Ok(g.as_ref().map(|r| r.daemons.clone())),
                             Err(_) => Err(()),
                         });
-                connecting = match daemons {
-                    Some(Ok(Some(d))) => d.status().await.iter().any(|s| s.connecting),
-                    Some(Ok(None)) | None => false,
-                    // Busy (a start or stop holds it): keep the last answer.
-                    Some(Err(())) => connecting,
+                connecting = match (engine, daemons) {
+                    (Some(up), _) => up,
+                    (None, daemons) => match daemons {
+                        Some(Ok(Some(d))) => d.status().await.iter().any(|s| s.connecting),
+                        Some(Ok(None)) | None => false,
+                        // Busy (a start or stop holds it): keep the last answer.
+                        Some(Err(())) => connecting,
+                    },
                 };
                 // A switched-on node can still read "Stopped" for a moment, so
                 // the watch ends only after a few quiet polls in a row.
